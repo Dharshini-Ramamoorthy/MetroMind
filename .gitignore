@@ -1,0 +1,32 @@
+# Maven & Java Build Outputs
+target/
+*.jar
+*.war
+*.ear
+*.class
+
+# Python Virtual Environments & Dependencies
+venv/
+.venv/
+env/
+ENV/
+__pycache__/
+*.pyc
+
+# Eclipse & IDE Metadata
+.metadata/
+.classpath
+.project
+.settings/
+.idea/
+*.iml
+*.iws
+
+# Binaries & Compressed Files
+*.zip
+*.dll
+*.so
+*.dylib
+*.exe
+Thumbs.db
+.DS_Store

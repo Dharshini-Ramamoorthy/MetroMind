@@ -1,0 +1,52 @@
+{
+  "model": "XGBRegressor",
+  "mae": 41.24353790283203,
+  "rmse": 61.555652775938256,
+  "r2": 0.964924693107605,
+  "mean_actual_demand": 447.17009083044985,
+  "n_train_rows": 221952,
+  "n_test_rows": 55488,
+  "top_features": [
+    {
+      "feature": "hour",
+      "importance": 0.6985161900520325
+    },
+    {
+      "feature": "station_MG Road",
+      "importance": 0.07862447202205658
+    },
+    {
+      "feature": "station_JLN Stadium",
+      "importance": 0.05310196056962013
+    },
+    {
+      "feature": "station_Petta",
+      "importance": 0.041994091123342514
+    },
+    {
+      "feature": "station_Aluva",
+      "importance": 0.03484697267413139
+    },
+    {
+      "feature": "is_weekend",
+      "importance": 0.02623741142451763
+    },
+    {
+      "feature": "day_of_week",
+      "importance": 0.02272532321512699
+    },
+    {
+      "feature": "station_Edapally",
+      "importance": 0.015087705105543137
+    },
+    {
+      "feature": "weather_Clear",
+      "importance": 0.01171073131263256
+    },
+    {
+      "feature": "is_holiday",
+      "importance": 0.006328599527478218
+    }
+  ],
+  "note": "Trained on SYNTHETIC data - metrics describe how well the model learned the synthetic generator's patterns, not real-world accuracy. Retrain on real AFC data before trusting these numbers operationally."
+}
