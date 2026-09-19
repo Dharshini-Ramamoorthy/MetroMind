@@ -66,15 +66,23 @@ public class ResilientFleetClient {
     @Retry(name = "fleetService")
     @CircuitBreaker(name = "fleetService", fallbackMethod = "fallbackGetAvailableTrains")
     public List<TrainAssetDto> getAvailableTrains() {
-        List<TrackGroupDto> groups = fleetClient.getYardTracks();
-        if (groups == null) return Collections.emptyList();
-
-        return groups.stream()
-                .filter(g -> g.getTrains() != null)
-                .flatMap(g -> g.getTrains().stream())
-                .filter(t -> t != null && t.getStatus() != null)
-                .filter(t -> !"IN_MAINTENANCE".equalsIgnoreCase(t.getStatus()))
-                .collect(Collectors.toList());
+        try {
+            List<TrackGroupDto> groups = fleetClient.getYardTracks();
+            if (groups != null && !groups.isEmpty()) {
+                List<TrainAssetDto> trains = groups.stream()
+                        .filter(g -> g.getTrains() != null)
+                        .flatMap(g -> g.getTrains().stream())
+                        .filter(t -> t != null && t.getStatus() != null)
+                        .filter(t -> !"IN_MAINTENANCE".equalsIgnoreCase(t.getStatus()))
+                        .collect(Collectors.toList());
+                if (!trains.isEmpty()) {
+                    return trains;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("getYardTracks failed ({}), falling back to standby trains list.", e.getMessage());
+        }
+        return getStandbyTrains();
     }
 
     public List<TrainAssetDto> filterOutMaintenance(List<TrainAssetDto> trains, Set<String> activeMaintenanceTickets) {
@@ -121,9 +129,9 @@ public class ResilientFleetClient {
     }
 
     private List<TrainAssetDto> fallbackGetAvailableTrains(Throwable ex) {
-        log.warn("fleet-service unreachable while fetching the yard for schedule generation ({}): {}.",
+        log.warn("fleet-service unreachable while fetching the yard for schedule generation ({}): {}. Falling back to standby trains list.",
                 ex.getClass().getSimpleName(), ex.getMessage());
-        return Collections.emptyList();
+        return getStandbyTrains();
     }
 
     private void fallbackUpdateTrainStatus(String trainId, String status, Throwable ex) {

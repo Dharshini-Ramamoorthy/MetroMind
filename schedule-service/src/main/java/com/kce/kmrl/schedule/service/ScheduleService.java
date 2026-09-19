@@ -130,6 +130,10 @@ public class ScheduleService {
 
         long t = System.currentTimeMillis();
         List<TrainAssetDto> rawFleet = fleetClient.getAvailableTrains();
+        if (rawFleet == null || rawFleet.isEmpty()) {
+            log.warn("getAvailableTrains() returned empty; attempting fallback to getStandbyTrains().");
+            rawFleet = fleetClient.getStandbyTrains();
+        }
         Set<String> blockedForServiceDate = maintenanceClient.findTrainsWithActiveTickets(serviceDate);
 
         List<TrainAssetDto> candidatePool = (rawFleet != null ? rawFleet : new ArrayList<TrainAssetDto>()).stream()
@@ -657,6 +661,10 @@ public class ScheduleService {
 
             List<ScheduleTrip> dayTrips = tripRepository.findByServiceDate(serviceDate);
             List<TrainAssetDto> rawFleet = fleetClient.getAvailableTrains();
+        if (rawFleet == null || rawFleet.isEmpty()) {
+            log.warn("getAvailableTrains() returned empty; attempting fallback to getStandbyTrains().");
+            rawFleet = fleetClient.getStandbyTrains();
+        }
             Set<String> blockedForServiceDate = maintenanceClient.findTrainsWithActiveTickets(serviceDate);
 
             List<TrainAssetDto> candidatePool = (rawFleet != null ? rawFleet : new ArrayList<TrainAssetDto>()).stream()
@@ -773,6 +781,10 @@ public class ScheduleService {
     public void validateFullSchedule(List<ScheduleTrip> dayTrips) {
         String sDate = (dayTrips != null && !dayTrips.isEmpty()) ? dayTrips.get(0).getServiceDate() : TimeUtil.today();
         List<TrainAssetDto> rawFleet = fleetClient.getAvailableTrains();
+        if (rawFleet == null || rawFleet.isEmpty()) {
+            log.warn("getAvailableTrains() returned empty; attempting fallback to getStandbyTrains().");
+            rawFleet = fleetClient.getStandbyTrains();
+        }
         Set<String> blockedForServiceDate = maintenanceClient.findTrainsWithActiveTickets(sDate);
 
         List<TrainAssetDto> candidatePool = (rawFleet != null ? rawFleet : new ArrayList<TrainAssetDto>()).stream()
@@ -1021,6 +1033,10 @@ public class ScheduleService {
             List<ScheduleTrip> dayTrips = tripRepository.findByServiceDate(trip.getServiceDate());
             String sDate = trip.getServiceDate();
             List<TrainAssetDto> rawFleet = fleetClient.getAvailableTrains();
+        if (rawFleet == null || rawFleet.isEmpty()) {
+            log.warn("getAvailableTrains() returned empty; attempting fallback to getStandbyTrains().");
+            rawFleet = fleetClient.getStandbyTrains();
+        }
         Set<String> blockedForServiceDate = maintenanceClient.findTrainsWithActiveTickets(sDate);
 
         List<TrainAssetDto> candidatePool = (rawFleet != null ? rawFleet : new ArrayList<TrainAssetDto>()).stream()
