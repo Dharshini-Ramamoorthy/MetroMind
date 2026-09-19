@@ -52,7 +52,7 @@ public class FleetService {
             .thenComparing(TrainAsset::getHealthIndex, Comparator.nullsLast(Comparator.reverseOrder()));
 
     public FleetSummaryDto getFleetSummary() {
-        List<TrainAsset> all = trainRepository.findAll();
+        List<TrainAsset> all = getAllTrains();
         List<TrainAsset> maintenance = resolveTrainsInMaintenance(all);
         Set<String> maintenanceIds = maintenance.stream().map(TrainAsset::getId).collect(Collectors.toSet());
 
@@ -69,7 +69,7 @@ public class FleetService {
     }
 
     public List<TrackGroupDto> getYardTrackGroups() {
-        List<TrainAsset> all = trainRepository.findAll();
+        List<TrainAsset> all = getAllTrains();
         List<TrainAsset> maintenance = resolveTrainsInMaintenance(all);
         Set<String> maintenanceIds = maintenance.stream().map(TrainAsset::getId).collect(Collectors.toSet());
 
@@ -92,7 +92,7 @@ public class FleetService {
     }
 
     public List<TrainAsset> getStandbyTrains() {
-        List<TrainAsset> all = trainRepository.findAll();
+        List<TrainAsset> all = getAllTrains();
         Set<String> maintenanceIds = resolveTrainsInMaintenance(all).stream()
                 .map(TrainAsset::getId)
                 .collect(Collectors.toSet());
@@ -264,4 +264,47 @@ public class FleetService {
         String hash = "0x" + UUID.randomUUID().toString().substring(0, 8);
         ledgerRepository.save(new AuditLedgerEntry(id, timestamp, trainNumber, vector, opCode, hash));
     }
+
+    private static final String[] RIVER_NAMES = {
+        "Periyar", "Pamba", "Kabani", "Bhavani", "Chaliyar", "Bharathapuzha", "Meenachil",
+        "Kaveri", "Muvattupuzha", "Chalakkudy", "Achankovil", "Manimala", "Pamba-II",
+        "Neyyar", "Kallada", "Valapattanam", "Karatoya", "Gayathri", "Siruvani",
+        "Korapuzha", "Irikkur", "Thanikkudam", "Kuthiran", "Pennar", "Chaliyar-II"
+    };
+
+    private synchronized List<TrainAsset> getAllTrains() {
+        List<TrainAsset> all = trainRepository.findAll();
+        if (all != null && !all.isEmpty()) {
+            return all;
+        }
+
+        log.warn("Fleet database has 0 trainsets! Auto-seeding 25 KMRL trainsets into kmrl_fleet_db...");
+        List<TrainAsset> seeded = new ArrayList<>();
+        for (int i = 1; i <= 25; i++) {
+            String padId = String.format("%02d", i);
+            String id = "TS-" + padId;
+            String name = "KMRL Set " + padId + " (" + RIVER_NAMES[i - 1] + ")";
+
+            TrainStatus status = TrainStatus.STANDBY;
+            String depot = "Muttom Depot Yard";
+            String track = "Yard Staging Bay " + ((i - 1) / 3 + 1) + "-Track " + ((i - 1) % 3 + 1);
+            int health = 91 + (i % 8);
+            int brakePressure = 890 + (i * 2);
+
+            TrainAsset train = new TrainAsset(
+                id, name, "Alstom Metropolis 3-Car Rake", status,
+                depot, track, null, null, health,
+                "2026-08-01", brakePressure, 100000 + (i * 1250)
+            );
+            train.setMileageAtLastServiceKm(train.getTotalMileageKm());
+            try {
+                trainRepository.save(train);
+            } catch (Exception e) {
+                log.error("Failed to save auto-seeded train {}: {}", id, e.getMessage());
+            }
+            seeded.add(train);
+        }
+        return seeded;
+    }
+
 }
