@@ -22,4 +22,8 @@ public interface ReportService {
     LiveSummaryDto getLiveSummary();
 
     byte[] getReportPdf(String id);
+
+    record ReportDownload(String title, byte[] pdfContent) {}
+
+    ReportDownload downloadReport(String id);
 }

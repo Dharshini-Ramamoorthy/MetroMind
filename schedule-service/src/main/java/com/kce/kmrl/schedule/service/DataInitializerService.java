@@ -148,8 +148,6 @@ public class DataInitializerService implements CommandLineRunner {
         }
 
         tripRepository.saveAll(trips);
-
-        long peakTrips = trips.stream().filter(t -> TimeUtil.isPeak(t.getStartMinutes())).count();
         log.info("Seeded {}'s baseline timetable with 100% train assignments: {} trips.", today, trips.size());
     }
 
@@ -181,7 +179,8 @@ public class DataInitializerService implements CommandLineRunner {
     private void reconcileAfterRestart(List<ScheduleTrip> todaysTrips) {
         int currentMinutes = TimeUtil.nowMinutes();
         List<ScheduleTrip> missed = todaysTrips.stream()
-                .filter(t -> t.getStatus() != TripStatus.COMPLETED && t.getEndMinutes() <= currentMinutes)
+                .filter(t -> (t.getStatus() == TripStatus.PLANNED || t.getStatus() == TripStatus.ACTIVE || t.getStatus() == TripStatus.DELAYED)
+                        && t.getEndMinutes() <= currentMinutes)
                 .collect(Collectors.toList());
         if (missed.isEmpty()) {
             return;

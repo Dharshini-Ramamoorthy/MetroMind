@@ -20,41 +20,78 @@ spring:
           uri: lb://USER-SERVICE
           predicates:
             - Path=/api/v1/auth/**,/api/v1/users/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: userServiceCB
+                fallbackUri: forward:/fallback/user-service
 
         - id: fleet-service
           uri: lb://FLEET-SERVICE
           predicates:
             - Path=/api/v1/fleet/**,/api/v1/ledger/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: fleetServiceCB
+                fallbackUri: forward:/fallback/fleet-service
 
         - id: schedule-service
           uri: lb://SCHEDULE-SERVICE
           predicates:
             - Path=/api/v1/schedule/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: scheduleServiceCB
+                fallbackUri: forward:/fallback/schedule-service
 
         - id: maintenance-service
           uri: lb://MAINTENANCE-SERVICE
           predicates:
             - Path=/api/v1/maintenance/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: maintenanceServiceCB
+                fallbackUri: forward:/fallback/maintenance-service
 
         - id: alert-service
           uri: lb://ALERT-SERVICE
           predicates:
             - Path=/api/v1/alerts/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: alertServiceCB
+                fallbackUri: forward:/fallback/alert-service
 
         - id: report-service
           uri: lb://REPORT-SERVICE
           predicates:
             - Path=/api/v1/reports/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: reportServiceCB
+                fallbackUri: forward:/fallback/report-service
 
         - id: approver-service
           uri: lb://APPROVER-SERVICE
           predicates:
             - Path=/api/approver/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: approverServiceCB
+                fallbackUri: forward:/fallback/approver-service
 
 eureka:
   client:
+    username: ${EUREKA_USER:eureka}
+    password: ${EUREKA_PASSWORD:eureka123}
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://${EUREKA_USER:eureka}:${EUREKA_PASSWORD:eureka123}@localhost:8761/eureka/
     fetch-registry: true
     register-with-eureka: true
   instance:
@@ -143,15 +180,15 @@ resilience4j:
       approverServiceCB:
         timeout-duration: 4s
 
-gateway.internal-secret: ${GATEWAY_INTERNAL_SECRET:local-dev-secret-change-me}
+gateway.internal-secret: ${GATEWAY_INTERNAL_SECRET}
 
-jwt.secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250655368566D5971}
+jwt.secret: ${JWT_SECRET}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,gateway,circuitbreakers
+        include: health,info
   endpoint:
     health:
       show-details: always
@@ -163,3 +200,4 @@ logging:
   level:
     org.springframework.cloud.gateway: INFO
     io.github.resilience4j: INFO
+

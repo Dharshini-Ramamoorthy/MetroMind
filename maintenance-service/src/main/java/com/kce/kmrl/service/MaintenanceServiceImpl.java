@@ -45,6 +45,9 @@ public class MaintenanceServiceImpl implements MaintenanceService {
             EnumSet.of(MaintenanceStatus.OPEN, MaintenanceStatus.SCHEDULED,
                        MaintenanceStatus.IN_PROGRESS, MaintenanceStatus.PENDING_CLOSURE);
 
+    private static final Set<String> ALLOWED_COF_EXTENSIONS =
+            Set.of(".pdf", ".png", ".jpg", ".jpeg");
+
     private final MaintenanceRepository maintenanceRepository;
     private final RestClient loadBalancedRestClient;
     private final Path uploadDir;
@@ -111,7 +114,14 @@ public class MaintenanceServiceImpl implements MaintenanceService {
         m.setTrainPulled(false);
         m.setWithdrawalStatus(TrainWithdrawalStatus.WITHDRAWAL_PENDING);
         Maintenance saved = maintenanceRepository.save(m);
-        withdrawTrainFromSchedule(saved.getTrainNumber(), saved.getId());
+        try {
+            withdrawTrainFromSchedule(saved.getTrainNumber(), saved.getId());
+        } catch (WithdrawalFailedException e) {
+            saved.setWithdrawalStatus(TrainWithdrawalStatus.WITHDRAWAL_FAILED);
+            saved = maintenanceRepository.save(saved);
+            log.error("{}", e.getMessage());
+            return mapToResponse(saved);
+        }
         saved.setTrainPulled(true);
         saved.setWithdrawalStatus(TrainWithdrawalStatus.PULLED);
         saved.setTrainPulledAt(Instant.now());
@@ -149,9 +159,8 @@ public class MaintenanceServiceImpl implements MaintenanceService {
     @Scheduled(fixedRate = 20000)
     public void autoActivateScheduledMaintenance() {
         LocalDate today = LocalDate.now();
-        List<Maintenance> scheduled = maintenanceRepository.findAll().stream()
-                .filter(t -> t.getStatus() == MaintenanceStatus.SCHEDULED && t.getPlannedMaintenanceDate() != null && !today.isBefore(t.getPlannedMaintenanceDate()))
-                .collect(Collectors.toList());
+        List<Maintenance> scheduled = maintenanceRepository.findByStatusAndPlannedMaintenanceDateLessThanEqual(
+                MaintenanceStatus.SCHEDULED, today);
         for (Maintenance ticket : scheduled) {
             try {
                 log.info("Auto-activating scheduled routine maintenance on date {} for ticket {} (train {})",
@@ -183,14 +192,27 @@ public class MaintenanceServiceImpl implements MaintenanceService {
         MaintenanceStatus.assertValidTransition(ticket.getStatus(), target);
         ticket.setStatus(target);
         if (comments != null && !comments.isBlank()) { ticket.setApproverComments(comments); }
-        Maintenance saved = maintenanceRepository.save(ticket);
         if (target == MaintenanceStatus.COMPLETED) {
+            Maintenance saved = maintenanceRepository.save(ticket);
             updateFleetTrainStatus(saved.getTrainNumber(), "STANDBY");
             log.info("CoF approved for ticket {} (train {}). Train returned to STANDBY.", ticketId, saved.getTrainNumber());
+            return mapToResponse(saved);
         } else {
+            if (ticket.getCofDocumentStoredFileName() != null && !ticket.getCofDocumentStoredFileName().isBlank()) {
+                try {
+                    Files.deleteIfExists(uploadDir.resolve(ticket.getCofDocumentStoredFileName()));
+                } catch (IOException e) {
+                    log.warn("Failed to delete rejected CoF document {}: {}", ticket.getCofDocumentStoredFileName(), e.getMessage());
+                }
+            }
+            ticket.setCofDocumentStoredFileName(null);
+            ticket.setCofDocumentOriginalFileName(null);
+            ticket.setCofSubmittedBy(null);
+            ticket.setCofSubmittedAt(null);
+            Maintenance saved = maintenanceRepository.save(ticket);
             log.info("CoF rejected for ticket {} (train {}). Back to IN_PROGRESS.", ticketId, saved.getTrainNumber());
+            return mapToResponse(saved);
         }
-        return mapToResponse(saved);
     }
 
     private void withdrawTrainFromSchedule(String trainId, String maintenanceTicketId) {
@@ -256,11 +278,42 @@ public class MaintenanceServiceImpl implements MaintenanceService {
         return mapToResponse(saved);
     }
 
+    @Override
+    public MaintenanceResponse retryWithdrawal(String ticketId) {
+        Maintenance ticket = maintenanceRepository.findById(ticketId).orElseThrow(() -> new TicketNotFoundException(ticketId));
+        if (ticket.getWithdrawalStatus() != TrainWithdrawalStatus.WITHDRAWAL_FAILED) {
+            throw new InvalidRequestException("Withdrawal retry is only valid for tickets with WITHDRAWAL_FAILED status. Current: " + ticket.getWithdrawalStatus());
+        }
+        try {
+            withdrawTrainFromSchedule(ticket.getTrainNumber(), ticket.getId());
+            ticket.setTrainPulled(true);
+            ticket.setWithdrawalStatus(TrainWithdrawalStatus.PULLED);
+            ticket.setTrainPulledAt(Instant.now());
+            ticket.setStatus(MaintenanceStatus.IN_PROGRESS);
+            Maintenance saved = maintenanceRepository.save(ticket);
+            updateFleetTrainStatus(saved.getTrainNumber(), "IN_MAINTENANCE");
+            return mapToResponse(saved);
+        } catch (WithdrawalFailedException e) {
+            ticket.setWithdrawalStatus(TrainWithdrawalStatus.WITHDRAWAL_FAILED);
+            maintenanceRepository.save(ticket);
+            throw e;
+        }
+    }
+
     private String storeCofDocument(MultipartFile document, String ticketId) {
         String orig = document.getOriginalFilename();
-        String ext = (orig != null && orig.contains(".")) ? orig.substring(orig.lastIndexOf('.')) : ".pdf";
+        if (orig == null || !orig.contains(".")) {
+            throw new InvalidRequestException("Invalid document extension. Allowed types are: .pdf, .png, .jpg, .jpeg.");
+        }
+        String ext = orig.substring(orig.lastIndexOf('.')).toLowerCase();
+        if (!ALLOWED_COF_EXTENSIONS.contains(ext)) {
+            throw new InvalidRequestException("Invalid document extension. Allowed types are: .pdf, .png, .jpg, .jpeg.");
+        }
         String stored = ticketId + "_" + UUID.randomUUID() + ext;
         Path target = uploadDir.resolve(stored);
+        if (!target.normalize().startsWith(uploadDir)) {
+            throw new InvalidRequestException("Invalid document filename.");
+        }
         try { Files.copy(document.getInputStream(), target); log.info("CoF document for ticket {} stored as {}", ticketId, stored); return stored; }
         catch (IOException e) { throw new InvalidRequestException("Failed to store the CoF document: " + e.getMessage()); }
     }
@@ -289,6 +342,9 @@ public class MaintenanceServiceImpl implements MaintenanceService {
     @Override
     public void markTrainPulled(String ticketId, String trainNumber) {
         Maintenance ticket = maintenanceRepository.findById(ticketId).orElse(null);
+        if (ticket != null && !ticket.getTrainNumber().equals(trainNumber)) {
+            throw new InvalidRequestException("Ticket train number '" + ticket.getTrainNumber() + "' does not match provided train number '" + trainNumber + "'.");
+        }
         if (ticket == null || ticket.isTrainPulled()) return;
         ticket.setTrainPulled(true);
         ticket.setWithdrawalStatus(TrainWithdrawalStatus.PULLED);

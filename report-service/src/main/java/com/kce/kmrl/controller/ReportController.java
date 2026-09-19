@@ -65,10 +65,9 @@ public class ReportController {
 
     @GetMapping("/{id}/download")
     public ResponseEntity<byte[]> downloadReport(@PathVariable String id) {
-        ReportResponse report = reportService.getReportById(id);
-        byte[] pdf = reportService.getReportPdf(id);
+        ReportService.ReportDownload download = reportService.downloadReport(id);
 
-        String filename = (report.getTitle() != null ? report.getTitle() : "report")
+        String filename = (download.title() != null ? download.title() : "report")
                 .toLowerCase()
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("(^-|-$)", "") + ".pdf";
@@ -77,6 +76,6 @@ public class ReportController {
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename(filename).build().toString())
-                .body(pdf);
+                .body(download.pdfContent());
     }
 }

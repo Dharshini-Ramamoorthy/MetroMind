@@ -16,7 +16,9 @@ public class UserConstants {
         "Error: A registration request for this email is already pending approval.";
 
     public static final String ERR_CANNOT_SELF_REGISTER_AS_ADMIN =
-        "Error: The System Admin role cannot be self-registered. Contact an existing administrator.";
+        "Error: Privileged roles (ADMIN, SADA) cannot be self-registered. Contact an existing administrator.";
+    public static final String ERR_CANNOT_SELF_REGISTER_PRIVILEGED_ROLE =
+        "Error: Privileged roles (ADMIN, SADA) cannot be self-registered. Contact an existing administrator.";
     public static final String ERR_REGISTRATION_NOT_FOUND = "Error: Registration request not found.";
     public static final String ERR_REGISTRATION_ALREADY_DECIDED =
         "Error: This registration request has already been decided.";

@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,6 +30,9 @@ public class GatewayHeaderAuthenticationFilter extends OncePerRequestFilter {
 
     public GatewayHeaderAuthenticationFilter(
             @Value("${schedule.security.gateway-secret:}") String gatewaySecret) {
+        if (gatewaySecret == null || gatewaySecret.isBlank()) {
+            throw new IllegalStateException("schedule.security.gateway-secret must be configured and non-blank");
+        }
         this.gatewaySecret = gatewaySecret;
     }
 
@@ -36,14 +41,14 @@ public class GatewayHeaderAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
-        if (gatewaySecret != null && !gatewaySecret.isBlank()) {
-            String presented = request.getHeader("X-Gateway-Secret");
-            if (!gatewaySecret.equals(presented)) {
-                log.warn("Rejected request to {} - missing/incorrect X-Gateway-Secret " +
-                        "(request did not come through api-gateway)", request.getRequestURI());
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Missing or incorrect gateway secret");
-                return;
-            }
+        String presented = request.getHeader("X-Gateway-Secret");
+        if (presented == null || !MessageDigest.isEqual(
+                gatewaySecret.getBytes(StandardCharsets.UTF_8),
+                presented.getBytes(StandardCharsets.UTF_8))) {
+            log.warn("Rejected request to {} - missing/incorrect X-Gateway-Secret " +
+                    "(request did not come through api-gateway)", request.getRequestURI());
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Missing or incorrect gateway secret");
+            return;
         }
 
         String userId = request.getHeader("X-User-Id");

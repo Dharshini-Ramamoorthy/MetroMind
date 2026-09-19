@@ -24,17 +24,11 @@ public class ScheduleSafetyValidator {
     @Value("${schedule.min-section-separation-seconds:120}")
     private int minSectionSeparationSeconds;
 
-    @Value("${schedule.min-platform-clearance-seconds:60}")
-    private int minPlatformClearanceSeconds;
-
     @Value("${schedule.min-turnaround-minutes:3}")
     private int minTurnaroundMinutes;
 
     @Value("${schedule.min-dwell-minutes:2}")
     private int minDwellMinutes;
-
-    @Value("${schedule.min-terminal-recovery-minutes:3}")
-    private int minTerminalRecoveryMinutes;
 
     @Value("${schedule.max-terminal-idle-minutes:60}")
     private int maxTerminalIdleMinutes;
@@ -44,7 +38,7 @@ public class ScheduleSafetyValidator {
         int minSeparationMin = Math.max(2, minSectionSeparationSeconds / 60);
 
         for (ScheduleTrip existing : dayTrips) {
-            if (existing.getId().equals(newTrip.getId())) continue;
+            if (Objects.equals(existing.getId(), newTrip.getId())) continue;
             if (existing.getStatus() == TripStatus.CANCELLED || existing.getStatus() == TripStatus.MISSED) continue;
 
             if (normalizeRoute(existing.getRouteName()).equals(normalizeRoute(newTrip.getRouteName()))) {
@@ -212,10 +206,16 @@ public class ScheduleSafetyValidator {
     }
 
     private String getStartStation(ScheduleTrip trip) {
+        if (trip == null || trip.getRouteName() == null) {
+            return "Aluva";
+        }
         return trip.getRouteName().contains("Aluva to Thrippunithura") ? "Aluva" : "Thrippunithura";
     }
 
     private String getEndStation(ScheduleTrip trip) {
+        if (trip == null || trip.getRouteName() == null) {
+            return "Thrippunithura";
+        }
         return trip.getRouteName().contains("Aluva to Thrippunithura") ? "Thrippunithura" : "Aluva";
     }
 
@@ -224,7 +224,7 @@ public class ScheduleSafetyValidator {
         int floorArrivalMin = minArrivalHeadwaySeconds / 60;
 
         for (ScheduleTrip existing : dayTrips) {
-            if (existing.getId().equals(newTrip.getId())) continue;
+            if (Objects.equals(existing.getId(), newTrip.getId())) continue;
             if (existing.getStatus() == TripStatus.CANCELLED || existing.getStatus() == TripStatus.MISSED) continue;
 
             if (normalizeRoute(existing.getRouteName()).equals(normalizeRoute(newTrip.getRouteName()))) {
@@ -254,7 +254,7 @@ public class ScheduleSafetyValidator {
 
     public boolean validateTrainTurnaroundAndOverlap(ScheduleTrip newTrip, List<ScheduleTrip> trainTrips, StringBuilder reason) {
         for (ScheduleTrip existing : trainTrips) {
-            if (existing.getId().equals(newTrip.getId())) continue;
+            if (Objects.equals(existing.getId(), newTrip.getId())) continue;
             if (existing.getStatus() == TripStatus.CANCELLED || existing.getStatus() == TripStatus.MISSED) continue;
 
             boolean overlap = !(newTrip.getEndMinutes() <= existing.getStartMinutes() || newTrip.getStartMinutes() >= existing.getEndMinutes());

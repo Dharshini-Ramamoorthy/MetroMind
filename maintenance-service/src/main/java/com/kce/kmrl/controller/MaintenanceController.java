@@ -81,6 +81,7 @@ public class MaintenanceController {
         return ResponseEntity.ok(maintenanceService.submitCertificateOfFitness(id, req, document));
     }
 
+    @PreAuthorize("hasAnyRole('MDS','OC','SADA')")
     @GetMapping("/tickets/{id}/certificate-of-fitness/document")
     public ResponseEntity<Resource> getCofDocument(@PathVariable String id) {
         Resource resource = maintenanceService.getCofDocument(id);
@@ -104,5 +105,11 @@ public class MaintenanceController {
     @PostMapping("/tickets/{id}/retry-approval")
     public ResponseEntity<MaintenanceResponse> retryApproval(@PathVariable String id) {
         return ResponseEntity.ok(maintenanceService.retryApprovalSubmission(id));
+    }
+
+    @PreAuthorize("hasRole('MDS')")
+    @PostMapping("/tickets/{id}/retry-withdrawal")
+    public ResponseEntity<MaintenanceResponse> retryWithdrawal(@PathVariable String id) {
+        return ResponseEntity.ok(maintenanceService.retryWithdrawal(id));
     }
 }

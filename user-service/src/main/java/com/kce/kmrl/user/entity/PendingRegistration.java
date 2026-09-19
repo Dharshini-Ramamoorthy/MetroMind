@@ -4,11 +4,15 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "pending_registrations")
+@Table(name = "pending_registrations", uniqueConstraints = {
+        @UniqueConstraint(columnNames = "username"),
+        @UniqueConstraint(columnNames = "email")
+})
 public class PendingRegistration {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "pending_reg_seq_gen")
+    @SequenceGenerator(name = "pending_reg_seq_gen", sequenceName = "pending_registrations_seq", allocationSize = 1)
     private Long id;
 
     @Column(nullable = false)

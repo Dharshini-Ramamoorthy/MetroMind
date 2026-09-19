@@ -35,8 +35,8 @@ public class TrainAssignmentService {
     }
 
     public void clearCache() {
-        availabilityCache.get().clear();
-        maintBlockCache.get().clear();
+        availabilityCache.remove();
+        maintBlockCache.remove();
     }
 
     public TrainAssetDto findSafeTrain(ScheduleTrip trip, List<ScheduleTrip> dayTrips, List<TrainAssetDto> candidatePool, StringBuilder resultReason) {
@@ -104,7 +104,7 @@ public class TrainAssignmentService {
                 continue;
             }
 
-            boolean isToday = java.time.LocalDate.now().toString().equals(sDate);
+            boolean isToday = com.kce.kmrl.schedule.util.TimeUtil.today().equals(sDate);
             boolean available;
             if (isToday) {
                 available = availabilityCache.get().computeIfAbsent(train.getId(), tid ->
@@ -210,32 +210,6 @@ public class TrainAssignmentService {
     }
 
     private boolean matchesTrainIdentifier(ScheduleTrip trip, String trainId) {
-        if (trip == null || trainId == null || trainId.isBlank()) return false;
-
-        String targetDigits = trainId.trim().replaceAll("\\D+", "");
-        if (targetDigits.isEmpty()) {
-            String rawId = trainId.trim().toUpperCase();
-            String assignedId = trip.getAssignedTrainId() != null ? trip.getAssignedTrainId().trim().toUpperCase() : "";
-            String assignedName = trip.getAssignedTrainName() != null ? trip.getAssignedTrainName().trim().toUpperCase() : "";
-            return assignedId.equalsIgnoreCase(rawId) || assignedName.equalsIgnoreCase(rawId);
-        }
-
-        int targetNum = Integer.parseInt(targetDigits);
-
-        String idDigits = trip.getAssignedTrainId() != null ? trip.getAssignedTrainId().replaceAll("\\D+", "") : "";
-        if (!idDigits.isEmpty()) {
-            try {
-                if (Integer.parseInt(idDigits) == targetNum) return true;
-            } catch (Exception ignored) {}
-        }
-
-        String nameDigits = trip.getAssignedTrainName() != null ? trip.getAssignedTrainName().replaceAll("\\D+", "") : "";
-        if (!nameDigits.isEmpty()) {
-            try {
-                if (Integer.parseInt(nameDigits) == targetNum) return true;
-            } catch (Exception ignored) {}
-        }
-
-        return false;
+        return com.kce.kmrl.schedule.util.TrainIdUtil.matchesTrainIdentifier(trip, trainId);
     }
 }

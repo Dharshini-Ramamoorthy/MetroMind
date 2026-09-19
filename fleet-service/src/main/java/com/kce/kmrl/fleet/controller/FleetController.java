@@ -1,10 +1,12 @@
 package com.kce.kmrl.fleet.controller;
 
+import com.kce.kmrl.fleet.dto.FleetOverrideRequest;
 import com.kce.kmrl.fleet.dto.FleetSummaryDto;
 import com.kce.kmrl.fleet.dto.StatusUpdateRequest;
 import com.kce.kmrl.fleet.dto.TrackGroupDto;
 import com.kce.kmrl.fleet.model.TrainAsset;
 import com.kce.kmrl.fleet.service.FleetService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/fleet")
@@ -78,5 +81,13 @@ public class FleetController {
             @RequestParam String tripCode,
             @RequestParam String routeName) {
         return ResponseEntity.ok(service.assignTrainDuty(trainId, tripCode, routeName));
+    }
+
+    @PreAuthorize("hasAnyRole('OC','MDS','SADA','SYSTEM')")
+    @PostMapping("/{trainId}/override")
+    public ResponseEntity<Map<String, Object>> requestOverride(
+            @PathVariable String trainId,
+            @Valid @RequestBody FleetOverrideRequest request) {
+        return ResponseEntity.ok(service.requestOverride(trainId, request));
     }
 }

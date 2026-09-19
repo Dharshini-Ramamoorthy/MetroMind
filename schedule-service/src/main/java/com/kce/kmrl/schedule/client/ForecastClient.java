@@ -22,14 +22,16 @@ import java.time.format.DateTimeFormatter;
 public class ForecastClient {
 
     private static final Logger log = LoggerFactory.getLogger(ForecastClient.class);
-    private static final DateTimeFormatter ISO_DATE_TIME = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final RestTemplate restTemplate;
     private final String baseUrl;
+    private final String internalServiceSecret;
 
     public ForecastClient(
-            @Value("${forecast.service.url:http://localhost:8001}") String forecastServiceUrl) {
+            @Value("${forecast.service.url:http://localhost:8001}") String forecastServiceUrl,
+            @Value("${internal.service-secret:}") String internalServiceSecret) {
         this.baseUrl = forecastServiceUrl;
+        this.internalServiceSecret = internalServiceSecret;
 
         org.springframework.http.client.SimpleClientHttpRequestFactory factory =
                 new org.springframework.http.client.SimpleClientHttpRequestFactory();
@@ -38,53 +40,6 @@ public class ForecastClient {
         this.restTemplate = new RestTemplate(factory);
 
         log.info("ForecastClient initialised — base URL: {}", forecastServiceUrl);
-    }
-
-    public ForecastScheduleResponse getRecommendation(
-            LocalDate serviceDate,
-            LocalTime slotTime,
-            boolean holiday,
-            boolean specialEvent,
-            String weather) {
-
-        String timestamp = serviceDate.atTime(slotTime).format(ISO_DATE_TIME);
-
-        try {
-            URI uri = UriComponentsBuilder
-                    .fromHttpUrl(baseUrl + "/api/v1/forecast/schedule")
-                    .queryParam("weather", weather)
-                    .queryParam("timestamp", timestamp)
-                    .queryParam("is_holiday", holiday)
-                    .queryParam("special_event", specialEvent)
-                    .queryParam("incident", false)
-                    .build(true)
-                    .toUri();
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("X-User-Id", "schedule-service");
-            headers.set("X-User-Role", "SYSTEM");
-
-            ResponseEntity<ForecastScheduleResponse> response = restTemplate.exchange(
-                    uri,
-                    HttpMethod.GET,
-                    new HttpEntity<>(headers),
-                    ForecastScheduleResponse.class);
-
-            ForecastScheduleResponse body = response.getBody();
-            if (body == null) {
-                throw new IllegalStateException("forecast-service returned empty response");
-            }
-            log.debug("Forecast for {} {} → headway={}s fleet={}",
-                    serviceDate, slotTime,
-                    body.getRecommendedHeadwaySeconds(),
-                    body.getRecommendedFleetSize());
-            return body;
-
-        } catch (RestClientException | IllegalStateException ex) {
-            log.warn("forecast-service unavailable for {} {}: {}. Using conservative fallback headway.",
-                    serviceDate, slotTime, ex.getMessage());
-            return fallback(serviceDate, slotTime, holiday, specialEvent, weather);
-        }
     }
 
     private ForecastScheduleResponse fallback(LocalDate serviceDate, LocalTime slotTime, boolean holiday, boolean specialEvent, String weather) {
@@ -185,6 +140,9 @@ public class ForecastClient {
             HttpHeaders headers = new HttpHeaders();
             headers.set("X-User-Id", "schedule-service");
             headers.set("X-User-Role", "SYSTEM");
+            if (internalServiceSecret != null && !internalServiceSecret.isBlank()) {
+                headers.set("X-Gateway-Secret", internalServiceSecret);
+            }
 
             ResponseEntity<java.util.Map> response = restTemplate.exchange(
                     uri,

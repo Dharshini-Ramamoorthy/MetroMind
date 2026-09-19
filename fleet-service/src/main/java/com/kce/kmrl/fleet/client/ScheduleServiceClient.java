@@ -26,7 +26,7 @@ public class ScheduleServiceClient {
     private static final Logger log = LoggerFactory.getLogger(ScheduleServiceClient.class);
 
     private static final Set<String> IN_PROGRESS_STATUSES =
-            new HashSet<>(Arrays.asList("ACTIVE", "DELAYED", "PLANNED", "PROPOSED"));
+            new HashSet<>(Arrays.asList("ACTIVE", "DELAYED"));
 
     private static final ZoneId KOLKATA = ZoneId.of("Asia/Kolkata");
 

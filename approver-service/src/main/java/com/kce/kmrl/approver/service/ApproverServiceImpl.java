@@ -88,7 +88,9 @@ public class ApproverServiceImpl implements ApproverService {
     private void assertCanDecide(ApprovalTask task, String approverRole) {
         String role = normalizeRole(approverRole);
         if ("ADMIN".equals(role)) {
-            return;
+            if (task.getRequestType() != RequestType.USER_REGISTRATION) {
+                throw new AccessDeniedException("ADMIN can only decide User Registration approvals.");
+            }
         } else if ("SADA".equals(role) || "APPROVER".equals(role)) {
             if (task.getRequestType() == RequestType.USER_REGISTRATION) {
                 throw new AccessDeniedException("SADA cannot decide User Registration approvals.");
@@ -164,6 +166,20 @@ public class ApproverServiceImpl implements ApproverService {
                         .retrieve()
                         .toBodilessEntity();
                 log.info("Approval callback executed for USER_REGISTRATION pendingRegistrationId={}: user account created", task.getTargetEntityId());
+            } else if (task.getRequestType() == RequestType.FLEET_OVERRIDE && task.getTargetEntityId() != null) {
+                Map<String, String> body = Map.of("status", "STANDBY");
+                loadBalancedRestClient.put()
+                        .uri("http://fleet-service/api/v1/fleet/" + task.getTargetEntityId() + "/status")
+                        .header("X-User-Id", SYSTEM_USER_ID)
+                        .header("X-User-Role", SYSTEM_USER_ROLE)
+                        .body(body)
+                        .retrieve()
+                        .toBodilessEntity();
+                log.info("Approval callback executed for FLEET_OVERRIDE trainId={}: status -> STANDBY", task.getTargetEntityId());
+            } else if (task.getRequestType() == RequestType.MAINTENANCE_DEFECT) {
+                log.warn("No downstream callback configured for MAINTENANCE_DEFECT task {}", task.getId());
+            } else {
+                log.warn("No downstream callback configured for {} task {}", task.getRequestType(), task.getId());
             }
         } catch (Exception e) {
             log.error("Failed to execute approval callback for task {}: {}", task.getId(), e.getMessage(), e);
@@ -177,13 +193,17 @@ public class ApproverServiceImpl implements ApproverService {
 
             if (task.getRequestType() == RequestType.SCHEDULE_PROPOSAL && task.getTargetEntityId() != null) {
                 if (task.getTargetEntityId().matches("\\d{4}-\\d{2}-\\d{2}")) {
-                    loadBalancedRestClient.post()
-                            .uri("http://schedule-service/api/v1/schedule/reject-day/" + task.getTargetEntityId())
-                            .header("X-User-Id", SYSTEM_USER_ID)
-                            .header("X-User-Role", SYSTEM_USER_ROLE)
-                            .retrieve()
-                            .toBodilessEntity();
-                    log.info("Rejection/Changes callback executed for batch SCHEDULE_PROPOSAL targetEntityId={}", task.getTargetEntityId());
+                    if (status == ApprovalStatus.REJECTED) {
+                        loadBalancedRestClient.post()
+                                .uri("http://schedule-service/api/v1/schedule/reject-day/" + task.getTargetEntityId())
+                                .header("X-User-Id", SYSTEM_USER_ID)
+                                .header("X-User-Role", SYSTEM_USER_ROLE)
+                                .retrieve()
+                                .toBodilessEntity();
+                        log.info("Rejection callback executed for batch SCHEDULE_PROPOSAL targetEntityId={}", task.getTargetEntityId());
+                    } else {
+                        log.info("Changes requested for batch SCHEDULE_PROPOSAL targetEntityId={}; keeping trips in draft/editable state for OC revision", task.getTargetEntityId());
+                    }
                 } else {
                     Map<String, String> body = Map.of("status", "CANCELLED", "reason", note);
                     loadBalancedRestClient.patch()
@@ -215,11 +235,26 @@ public class ApproverServiceImpl implements ApproverService {
                         .retrieve()
                         .toBodilessEntity();
                 log.info("Rejection callback executed for USER_REGISTRATION pendingRegistrationId={}", task.getTargetEntityId());
+            } else if (task.getRequestType() == RequestType.FLEET_OVERRIDE && task.getTargetEntityId() != null) {
+                Map<String, String> body = Map.of("status", "IN_MAINTENANCE");
+                loadBalancedRestClient.put()
+                        .uri("http://fleet-service/api/v1/fleet/" + task.getTargetEntityId() + "/status")
+                        .header("X-User-Id", SYSTEM_USER_ID)
+                        .header("X-User-Role", SYSTEM_USER_ROLE)
+                        .body(body)
+                        .retrieve()
+                        .toBodilessEntity();
+                log.info("Rejection/Changes callback executed for FLEET_OVERRIDE trainId={}: status -> IN_MAINTENANCE", task.getTargetEntityId());
+            } else if (task.getRequestType() == RequestType.MAINTENANCE_DEFECT) {
+                log.warn("No downstream callback configured for MAINTENANCE_DEFECT task {}", task.getId());
+            } else {
+                log.warn("No downstream callback configured for {} task {}", task.getRequestType(), task.getId());
             }
         } catch (Exception e) {
             log.error("Failed to execute rejection/changes callback for task {}: {}", task.getId(), e.getMessage(), e);
         }
     }
+
 
     @Override
     public ApproverStatsResponse getApproverStats(String approverRole) {

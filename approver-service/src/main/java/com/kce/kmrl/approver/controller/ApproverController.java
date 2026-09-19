@@ -7,6 +7,7 @@ import com.kce.kmrl.approver.dto.ApproverStatsResponse;
 import com.kce.kmrl.approver.entity.ApprovalTask;
 import com.kce.kmrl.approver.service.ApproverService;
 
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,6 +23,7 @@ public class ApproverController {
     @Autowired
     private ApproverService approverService;
 
+    @PreAuthorize("hasAnyRole('SYSTEM','SADA','OC','MDS','ADMIN')")
     @PostMapping("/tasks/submit")
     public ResponseEntity<ApprovalTaskDTO> submitTask(@RequestBody ApprovalTask task) {
         return ResponseEntity.ok(approverService.createApprovalTask(task));
@@ -40,7 +42,7 @@ public class ApproverController {
     @PostMapping("/tasks/{taskId}/decision")
     public ResponseEntity<ApprovalTaskDTO> processDecision(
             @PathVariable String taskId,
-            @RequestBody ApprovalDecisionRequest decision,
+            @Valid @RequestBody ApprovalDecisionRequest decision,
             Authentication authentication) {
 
         String approverUser = authentication != null ? authentication.getName() : "unknown";

@@ -34,7 +34,7 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public List<ReportResponse> getAllReports() {
-        return repository.findAll()
+        return repository.findAllWithoutPdf()
             .stream()
             .map(this::toResponse)
             .toList();
@@ -43,7 +43,7 @@ public class ReportServiceImpl implements ReportService {
     @Override
     public List<ReportResponse> getReportsByCategory(String category) {
         ReportCategory cat = ReportCategory.fromString(category);
-        return repository.findByCategory(cat)
+        return repository.findByCategoryWithoutPdf(cat)
             .stream()
             .map(this::toResponse)
             .toList();
@@ -76,13 +76,15 @@ public class ReportServiceImpl implements ReportService {
         report.setGeneratedDate(Instant.now());
         report.setCreatedAt(Instant.now());
 
-        byte[] pdf = pdfGenerator.generate(report, live);
-        report.setPdfContent(pdf);
-        report.setFileSize(formatFileSize(pdf.length));
-        report.setStatus(ReportStatus.FINAL);
-
         Report saved = repository.save(report);
-        return toResponse(saved);
+
+        byte[] pdf = pdfGenerator.generate(saved, live);
+        saved.setPdfContent(pdf);
+        saved.setFileSize(formatFileSize(pdf.length));
+        saved.setStatus(ReportStatus.FINAL);
+
+        Report finalSaved = repository.save(saved);
+        return toResponse(finalSaved);
     }
 
     @Override
@@ -103,6 +105,20 @@ public class ReportServiceImpl implements ReportService {
             return pdf;
         }
         return report.getPdfContent();
+    }
+
+    @Override
+    public ReportDownload downloadReport(String id) {
+        Report report = repository.findById(id)
+            .orElseThrow(() -> new ReportNotFoundException(id));
+        byte[] pdf = report.getPdfContent();
+        if (pdf == null) {
+            pdf = pdfGenerator.generate(report, null);
+            report.setPdfContent(pdf);
+            report.setFileSize(formatFileSize(pdf.length));
+            repository.save(report);
+        }
+        return new ReportDownload(report.getTitle(), pdf);
     }
 
     @Override

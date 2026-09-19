@@ -22,4 +22,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByEmail(String email);
 
     Optional<User> findByResetPasswordToken(String resetPasswordToken);
-}
+
+    @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u WHERE u.role = :role")
+    boolean existsByRole(@Param("role") com.kce.kmrl.user.entity.ERole role);
+
+    @Query("SELECT COUNT(u) FROM User u WHERE u.role = :role AND (u.active = true OR u.active IS NULL)")
+    long countByRoleAndActiveTrue(@Param("role") com.kce.kmrl.user.entity.ERole role);
+}

@@ -2,6 +2,8 @@ package com.kce.kmrl.entity;
 
 import com.kce.kmrl.exception.InvalidRequestException;
 
+import java.util.Arrays;
+
 public enum ReportCategory {
     FLEET,
     SCHEDULE,
@@ -18,10 +20,9 @@ public enum ReportCategory {
         try {
             return ReportCategory.valueOf(clean);
         } catch (IllegalArgumentException ex) {
-            if (clean.equals("ALERT") || clean.equals("ALERTS")) return ALERTS;
-            if (clean.equals("SAFETY")) return SAFETY;
+            if (clean.equals("ALERT")) return ALERTS;
             if (clean.equals("ALL")) return OVERALL;
-            return OVERALL;
+            throw new InvalidRequestException("Invalid category: '" + value + "'. Valid categories: " + Arrays.toString(values()));
         }
     }
 }

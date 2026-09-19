@@ -17,7 +17,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+    "schedule.security.gateway-secret=test-gateway-secret",
+    "internal.service-secret=test-internal-secret"
+})
 class ScheduleServiceApplicationTests {
 
     @Autowired

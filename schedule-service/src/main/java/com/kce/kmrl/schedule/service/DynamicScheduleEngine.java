@@ -27,6 +27,7 @@ public class DynamicScheduleEngine {
     private final ScheduleTripRepository tripRepository;
     private final ResilientFleetClient fleetClient;
     private final ResilientMaintenanceClient maintenanceClient;
+    private final ScheduleSafetyValidator safetyValidator;
 
     @Lazy
     @Autowired
@@ -34,10 +35,12 @@ public class DynamicScheduleEngine {
 
     public DynamicScheduleEngine(ScheduleTripRepository tripRepository,
                                   ResilientFleetClient fleetClient,
-                                  ResilientMaintenanceClient maintenanceClient) {
+                                  ResilientMaintenanceClient maintenanceClient,
+                                  ScheduleSafetyValidator safetyValidator) {
         this.tripRepository = tripRepository;
         this.fleetClient = fleetClient;
         this.maintenanceClient = maintenanceClient;
+        this.safetyValidator = safetyValidator;
     }
 
     private TrainAssetDto selectBestStandbyTrainForTrip(ScheduleTrip trip, List<TrainAssetDto> standbyTrains) {
@@ -50,7 +53,7 @@ public class DynamicScheduleEngine {
                 .filter(t -> t != null && t.getId() != null)
                 .filter(t -> !"IN_MAINTENANCE".equalsIgnoreCase(t.getStatus()))
                 .filter(t -> !matchesMaintenanceSet(t, activeMaintenanceTickets))
-                .sorted(Comparator.comparingLong(TrainAssetDto::getTotalMileageKm))
+                .sorted(Comparator.comparingLong(t -> t.getTotalMileageKm() != null ? t.getTotalMileageKm().longValue() : 0L))
                 .collect(Collectors.toList());
 
         for (TrainAssetDto candidate : sortedCandidates) {
@@ -88,18 +91,18 @@ public class DynamicScheduleEngine {
         List<TrainAssetDto> availableTrains = fleetClient.getAvailableTrains();
         TrainAssetDto best = selectBestStandbyTrainForTrip(trip, availableTrains);
 
-        String trainId = null;
-        String trainName = "Train Not Assigned";
-
         if (best != null) {
-            trainId = best.getId();
-            trainName = hasText(best.getTrainNumber()) ? best.getTrainNumber() : best.getId();
+            String trainId = best.getId();
+            String trainName = hasText(best.getTrainNumber()) ? best.getTrainNumber() : best.getId();
             trip.setAssignedTrainId(trainId);
             trip.setAssignedTrainName(trainName);
-        } else if (availableTrains != null && !availableTrains.isEmpty()) {
-            TrainAssetDto fallback = availableTrains.get(0);
-            trip.setAssignedTrainId(fallback.getId());
-            trip.setAssignedTrainName(hasText(fallback.getTrainNumber()) ? fallback.getTrainNumber() : fallback.getId());
+            trip.setAssignmentStatus("ASSIGNED");
+            trip.setAssignmentReason("Assigned standby train " + trainName);
+        } else {
+            trip.setAssignedTrainId(null);
+            trip.setAssignedTrainName("Train Not Assigned");
+            trip.setAssignmentStatus("NOT_POSSIBLE");
+            trip.setAssignmentReason("No feasible standby train found without overlap, maintenance, or continuity conflicts.");
         }
 
         return trip;
@@ -207,12 +210,14 @@ public class DynamicScheduleEngine {
             return new WithdrawTrainResponse(false, 0, 0);
         }
 
-        List<ScheduleTrip> allTrips = tripRepository.findAll();
+        List<ScheduleTrip> allTrips = tripRepository.findByServiceDateGreaterThanEqualAndStatusIn(
+                TimeUtil.today(),
+                List.of(TripStatus.PLANNED, TripStatus.ACTIVE, TripStatus.DELAYED, TripStatus.PROPOSED, TripStatus.AWAITING_REPLACEMENT)
+        );
 
         List<ScheduleTrip> targetTrainTrips = allTrips.stream()
-                .filter(t -> t.getStatus() != TripStatus.CANCELLED && t.getStatus() != TripStatus.COMPLETED && t.getStatus() != TripStatus.MISSED)
                 .filter(t -> matchesTrainIdentifier(t, trainId))
-                .sorted(Comparator.comparingInt(ScheduleTrip::getStartMinutes))
+                .sorted(Comparator.comparing(ScheduleTrip::getServiceDate).thenComparingInt(ScheduleTrip::getStartMinutes))
                 .collect(Collectors.toList());
 
         if (targetTrainTrips.isEmpty()) {
@@ -222,48 +227,102 @@ public class DynamicScheduleEngine {
             return new WithdrawTrainResponse(false, 0, 0);
         }
 
-        List<TrainAssetDto> availableTrains = null;
+        boolean hadActiveTrip = targetTrainTrips.stream().anyMatch(t -> t.getStatus() == TripStatus.ACTIVE);
+
+        List<TrainAssetDto> standbyOrAvailable = null;
         try {
-            availableTrains = fleetClient.getAvailableTrains();
+            standbyOrAvailable = fleetClient.getStandbyTrains();
+            if (standbyOrAvailable == null || standbyOrAvailable.isEmpty()) {
+                standbyOrAvailable = fleetClient.getAvailableTrains();
+            }
         } catch (Exception e) {
-            log.warn("Could not fetch available trains during withdrawal: {}", e.getMessage());
+            log.warn("Could not fetch standby/available trains during withdrawal: {}", e.getMessage());
+        }
+        if (standbyOrAvailable == null) {
+            standbyOrAvailable = Collections.emptyList();
         }
 
-        TrainAssetDto replacement = findFirstYardReplacementTrain(trainId, availableTrains, targetTrainTrips, allTrips);
-
         List<ScheduleTrip> tripsToSave = new ArrayList<>();
-        int affectedCount = 0;
+        Map<String, List<ScheduleTrip>> replacementTripsByTrain = new HashMap<>();
+        for (ScheduleTrip t : allTrips) {
+            if (hasText(t.getAssignedTrainId()) && !"Train Not Assigned".equals(t.getAssignedTrainId())) {
+                replacementTripsByTrain.computeIfAbsent(t.getAssignedTrainId(), k -> new ArrayList<>()).add(t);
+            }
+        }
 
-        for (ScheduleTrip originalTrip : targetTrainTrips) {
+        for (ScheduleTrip activeTrip : targetTrainTrips) {
+            if (activeTrip.getStatus() == TripStatus.ACTIVE) {
+                activeTrip.setStatus(TripStatus.CANCELLED);
+                activeTrip.setChangedBy("MAINTENANCE");
+                activeTrip.setChangedAt(Instant.now());
+                activeTrip.setChangeReason("Train " + trainId + " withdrawn; active trip CANCELLED.");
+                tripsToSave.add(activeTrip);
+            }
+        }
 
-            originalTrip.setStatus(TripStatus.CANCELLED);
-            originalTrip.setChangedBy("MAINTENANCE");
-            originalTrip.setChangedAt(Instant.now());
-            originalTrip.setChangeReason("Train " + trainId + " pulled for maintenance; trip CANCELLED.");
-            tripsToSave.add(originalTrip);
-            affectedCount++;
+        List<ScheduleTrip> futureTrips = targetTrainTrips.stream()
+                .filter(t -> t.getStatus() != TripStatus.ACTIVE && t.getStatus() != TripStatus.CANCELLED)
+                .collect(Collectors.toList());
 
-            if (replacement != null) {
-                String repName = hasText(replacement.getTrainNumber()) ? replacement.getTrainNumber() : replacement.getId();
+        int futureTripsAffected = futureTrips.size();
+        int futureTripsAwaitingReplacement = 0;
+        Set<String> assignedReplacementTrainIds = new HashSet<>();
 
-                ScheduleTrip repTrip = new ScheduleTrip();
-                repTrip.setId("TR-" + originalTrip.getServiceDate() + "-REP-" + UUID.randomUUID().toString().substring(0, 8));
-                repTrip.setTripCode(originalTrip.getTripCode());
-                repTrip.setRouteName(originalTrip.getRouteName());
-                repTrip.setStartTime(originalTrip.getStartTime());
-                repTrip.setEndTime(originalTrip.getEndTime());
-                repTrip.setStartMinutes(originalTrip.getStartMinutes());
-                repTrip.setEndMinutes(originalTrip.getEndMinutes());
-                repTrip.setServiceDate(originalTrip.getServiceDate());
-                repTrip.setAssignedTrainId(replacement.getId());
-                repTrip.setAssignedTrainName(repName);
-                repTrip.setStatus(TripStatus.PLANNED);
-                repTrip.setSource("YARD_REPLACEMENT");
-                repTrip.setChangedBy("MAINTENANCE");
-                repTrip.setChangedAt(Instant.now());
-                repTrip.setChangeReason("Assigned from Muttom Yard to cover pulled train " + trainId);
+        for (ScheduleTrip trip : futureTrips) {
+            String sDate = trip.getServiceDate();
+            Set<String> activeMaint = maintenanceClient.findTrainsWithActiveTickets(sDate);
 
-                tripsToSave.add(repTrip);
+            List<TrainAssetDto> candidates = standbyOrAvailable.stream()
+                    .filter(tr -> tr != null && tr.getId() != null)
+                    .filter(tr -> !matchesTrainAssetIdentifier(tr, trainId))
+                    .filter(tr -> !"IN_MAINTENANCE".equalsIgnoreCase(tr.getStatus()))
+                    .filter(tr -> !matchesMaintenanceSet(tr, activeMaint))
+                    .sorted(Comparator.comparingLong(tr -> tr.getTotalMileageKm() != null ? tr.getTotalMileageKm().longValue() : 0L))
+                    .collect(Collectors.toList());
+
+            TrainAssetDto chosenReplacement = null;
+            for (TrainAssetDto candidate : candidates) {
+                List<ScheduleTrip> trainDayTrips = replacementTripsByTrain.getOrDefault(candidate.getId(), Collections.emptyList())
+                        .stream()
+                        .filter(t -> Objects.equals(t.getServiceDate(), sDate))
+                        .collect(Collectors.toList());
+
+                StringBuilder reason = new StringBuilder();
+                if (safetyValidator.validateTrainTurnaroundAndOverlap(trip, trainDayTrips, reason)
+                        && safetyValidator.validateTrainDirectionContinuity(trip, trainDayTrips, reason)) {
+                    chosenReplacement = candidate;
+                    break;
+                }
+            }
+
+            if (chosenReplacement != null) {
+                String repName = hasText(chosenReplacement.getTrainNumber()) ? chosenReplacement.getTrainNumber() : chosenReplacement.getId();
+                trip.setAssignedTrainId(chosenReplacement.getId());
+                trip.setAssignedTrainName(repName);
+                trip.setAssignmentStatus("ASSIGNED");
+                trip.setAssignmentReason("Assigned replacement train " + repName + " after withdrawal of " + trainId);
+                trip.setStatus(trip.getStatus() == TripStatus.PROPOSED ? TripStatus.PROPOSED : TripStatus.PLANNED);
+                if (trip.getTripCode() != null && !trip.getTripCode().endsWith("-R")) {
+                    trip.setTripCode(trip.getTripCode() + "-R");
+                }
+                trip.setChangedBy("MAINTENANCE");
+                trip.setChangedAt(Instant.now());
+                trip.setChangeReason("Re-assigned to train " + repName + " following withdrawal of " + trainId);
+
+                replacementTripsByTrain.computeIfAbsent(chosenReplacement.getId(), k -> new ArrayList<>()).add(trip);
+                assignedReplacementTrainIds.add(chosenReplacement.getId());
+                tripsToSave.add(trip);
+            } else {
+                trip.setAssignedTrainId(null);
+                trip.setAssignedTrainName("Train Not Assigned");
+                trip.setAssignmentStatus("NOT_POSSIBLE");
+                trip.setAssignmentReason("Train " + trainId + " withdrawn; no safe replacement train available.");
+                trip.setStatus(TripStatus.AWAITING_REPLACEMENT);
+                trip.setChangedBy("MAINTENANCE");
+                trip.setChangedAt(Instant.now());
+                trip.setChangeReason("Train " + trainId + " withdrawn; awaiting replacement.");
+                futureTripsAwaitingReplacement++;
+                tripsToSave.add(trip);
             }
         }
 
@@ -275,21 +334,21 @@ public class DynamicScheduleEngine {
             log.warn("Failed to set train {} status to IN_MAINTENANCE on fleet-service: {}", trainId, e.getMessage());
         }
 
-        if (replacement != null) {
+        for (String repId : assignedReplacementTrainIds) {
             try {
-                fleetClient.updateTrainStatus(replacement.getId(), "IN_SERVICE");
-                log.info("YARD REPLACEMENT: Train {} assigned to cover {} trips for pulled train {}.", replacement.getId(), affectedCount, trainId);
+                fleetClient.updateTrainStatus(repId, "IN_SERVICE");
+                log.info("YARD REPLACEMENT: Train {} set to IN_SERVICE to cover withdrawn train {}.", repId, trainId);
             } catch (Exception ignored) {}
         }
 
-        return new WithdrawTrainResponse(!targetTrainTrips.isEmpty(), affectedCount, affectedCount);
+        return new WithdrawTrainResponse(hadActiveTrip, futureTripsAffected, futureTripsAwaitingReplacement);
     }
 
     private TrainAssetDto findFirstYardReplacementTrain(String withdrawnTrainId, List<TrainAssetDto> availableTrains, List<ScheduleTrip> targetTrainTrips, List<ScheduleTrip> allTrips) {
         if (targetTrainTrips == null || targetTrainTrips.isEmpty()) return null;
         ScheduleTrip firstTrip = targetTrainTrips.get(0);
         String serviceDate = firstTrip.getServiceDate();
-        boolean isToday = java.time.LocalDate.now().toString().equals(serviceDate);
+        boolean isToday = TimeUtil.today().equals(serviceDate);
         int nowM = isToday ? TimeUtil.nowMinutes() : 0;
 
         List<TrainAssetDto> fetchedStandby = null;
@@ -398,92 +457,15 @@ public class DynamicScheduleEngine {
     }
 
     private boolean matchesMaintenanceSet(TrainAssetDto train, Set<String> activeTickets) {
-        if (train == null || activeTickets == null || activeTickets.isEmpty()) return false;
-
-        String id = train.getId() != null ? train.getId().trim().toUpperCase() : "";
-        String number = train.getTrainNumber() != null ? train.getTrainNumber().trim().toUpperCase() : "";
-
-        for (String active : activeTickets) {
-            if (active == null || active.isBlank()) continue;
-            String actUpper = active.trim().toUpperCase();
-
-            if (!id.isEmpty() && id.equals(actUpper)) return true;
-            if (!number.isEmpty() && number.equals(actUpper)) return true;
-
-            String actDigits = actUpper.replaceAll("\\D+", "");
-            if (!actDigits.isEmpty()) {
-                try {
-                    int actNum = Integer.parseInt(actDigits);
-
-                    String idDigits = id.replaceAll("\\D+", "");
-                    if (!idDigits.isEmpty() && Integer.parseInt(idDigits) == actNum) return true;
-
-                    String numDigits = number.replaceAll("\\D+", "");
-                    if (!numDigits.isEmpty() && Integer.parseInt(numDigits) == actNum) return true;
-                } catch (Exception ignored) {}
-            }
-        }
-        return false;
+        return com.kce.kmrl.schedule.util.TrainIdUtil.matchesMaintenanceSet(train, activeTickets);
     }
 
     private boolean matchesTrainAssetIdentifier(TrainAssetDto train, String targetId) {
-        if (train == null || targetId == null || targetId.isBlank()) return false;
-
-        String targetDigits = targetId.trim().replaceAll("\\D+", "");
-        if (targetDigits.isEmpty()) {
-            String rawId = targetId.trim().toUpperCase();
-            String trainId = train.getId() != null ? train.getId().trim().toUpperCase() : "";
-            String trainNum = train.getTrainNumber() != null ? train.getTrainNumber().trim().toUpperCase() : "";
-            return trainId.equalsIgnoreCase(rawId) || trainNum.equalsIgnoreCase(rawId);
-        }
-
-        int targetNum = Integer.parseInt(targetDigits);
-
-        String idDigits = train.getId() != null ? train.getId().replaceAll("\\D+", "") : "";
-        if (!idDigits.isEmpty()) {
-            try {
-                if (Integer.parseInt(idDigits) == targetNum) return true;
-            } catch (Exception ignored) {}
-        }
-
-        String numDigits = train.getTrainNumber() != null ? train.getTrainNumber().replaceAll("\\D+", "") : "";
-        if (!numDigits.isEmpty()) {
-            try {
-                if (Integer.parseInt(numDigits) == targetNum) return true;
-            } catch (Exception ignored) {}
-        }
-
-        return false;
+        return com.kce.kmrl.schedule.util.TrainIdUtil.matchesTrainAssetIdentifier(train, targetId);
     }
 
     private boolean matchesTrainIdentifier(ScheduleTrip trip, String trainId) {
-        if (trip == null || trainId == null || trainId.isBlank()) return false;
-
-        String targetDigits = trainId.trim().replaceAll("\\D+", "");
-        if (targetDigits.isEmpty()) {
-            String rawId = trainId.trim().toUpperCase();
-            String assignedId = trip.getAssignedTrainId() != null ? trip.getAssignedTrainId().trim().toUpperCase() : "";
-            String assignedName = trip.getAssignedTrainName() != null ? trip.getAssignedTrainName().trim().toUpperCase() : "";
-            return assignedId.equalsIgnoreCase(rawId) || assignedName.equalsIgnoreCase(rawId);
-        }
-
-        int targetNum = Integer.parseInt(targetDigits);
-
-        String idDigits = trip.getAssignedTrainId() != null ? trip.getAssignedTrainId().replaceAll("\\D+", "") : "";
-        if (!idDigits.isEmpty()) {
-            try {
-                if (Integer.parseInt(idDigits) == targetNum) return true;
-            } catch (Exception ignored) {}
-        }
-
-        String nameDigits = trip.getAssignedTrainName() != null ? trip.getAssignedTrainName().replaceAll("\\D+", "") : "";
-        if (!nameDigits.isEmpty()) {
-            try {
-                if (Integer.parseInt(nameDigits) == targetNum) return true;
-            } catch (Exception ignored) {}
-        }
-
-        return false;
+        return com.kce.kmrl.schedule.util.TrainIdUtil.matchesTrainIdentifier(trip, trainId);
     }
 
     private static boolean hasText(String s) {

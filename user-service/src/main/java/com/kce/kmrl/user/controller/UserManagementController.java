@@ -19,13 +19,13 @@ public class UserManagementController {
         this.userService = userService;
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN','ROLE_ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
     public ResponseEntity<List<UserManagementDTO>> listUsers() {
         return ResponseEntity.ok(userService.listAllUsers());
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN','ROLE_ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}/role")
     public ResponseEntity<?> changeRole(
             @PathVariable Long id,
@@ -42,7 +42,7 @@ public class UserManagementController {
         }
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN','ROLE_ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}/status")
     public ResponseEntity<?> setStatus(
             @PathVariable Long id,

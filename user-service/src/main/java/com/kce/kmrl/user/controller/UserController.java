@@ -12,9 +12,10 @@ import com.kce.kmrl.user.security.jwt.JwtUtils;
 import com.kce.kmrl.user.service.UserService;
 import com.kce.kmrl.user.util.UserConstants;
 
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -24,12 +25,16 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Map;
 import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/v1/auth")
 public class UserController {
+
+    private static final Logger log = LoggerFactory.getLogger(UserController.class);
 
     @Autowired
     private UserService userService;
@@ -40,11 +45,20 @@ public class UserController {
     @Autowired
     private JwtUtils jwtUtils;
 
-    @Value("${app.internal-secret:local-dev-internal-secret-change-me}")
+    @Value("${app.internal-secret:}")
     private String internalSecret;
 
+    @Value("${app.frontend-url:http://localhost:5173}")
+    private String frontendUrl;
+
     private boolean isValidInternalSecret(String provided) {
-        return provided != null && !provided.isBlank() && provided.equals(internalSecret);
+        if (internalSecret == null || internalSecret.isBlank() || "local-dev-internal-secret-change-me".equals(internalSecret) || provided == null || provided.isBlank()) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                internalSecret.getBytes(StandardCharsets.UTF_8),
+                provided.getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     private Optional<User> resolveUser() {
@@ -122,8 +136,9 @@ public class UserController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", "Invalid username/email or password."));
         } catch (Exception e) {
+            log.error("Internal error during login for user {}: {}", loginRequest.getUsername(), e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("message", "Login error: " + e.getMessage(), "error", e.getClass().getName()));
+                    .body(Map.of("message", "Login failed due to an internal server error."));
         }
     }
 
@@ -134,15 +149,7 @@ public class UserController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", "Not authenticated. Please sign in."));
         }
-        User user = userOpt.get();
-
-        Optional<User> freshUser = userService.findById(user.getId());
-        if (freshUser.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("message", UserConstants.ERR_USER_NOT_FOUND));
-        }
-
-        User u = freshUser.get();
+        User u = userOpt.get();
         return ResponseEntity.ok(Map.of(
             "id", u.getId(),
             "username", u.getUsername(),
@@ -219,19 +226,13 @@ public class UserController {
     }
 
     @PostMapping("/forgot-password")
-    public ResponseEntity<?> forgotPassword(
-            @Valid @RequestBody ForgotPasswordRequest request,
-            HttpServletRequest httpRequest) {
+    public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         try {
-            String origin = httpRequest.getHeader("Origin");
-            String frontendUrl = (origin != null && !origin.isBlank()) ? origin : "http://localhost:5173";
-
             userService.processForgotPassword(request, frontendUrl);
-
-            return ResponseEntity.ok(Map.of("message", "If an account exists for that email, a password reset link has been sent."));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+            log.error("Error processing forgot password request for email {}: {}", request.getEmail(), e.getMessage(), e);
         }
+        return ResponseEntity.ok(Map.of("message", "If an account exists for that email, a password reset link has been sent."));
     }
 
     @PostMapping("/reset-password")
@@ -242,8 +243,9 @@ public class UserController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         } catch (Exception e) {
+            log.error("Error resetting password: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("message", "An unexpected error occurred while resetting the password."));
         }
     }
-}
+}

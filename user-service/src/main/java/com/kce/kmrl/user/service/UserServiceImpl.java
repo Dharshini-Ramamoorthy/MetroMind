@@ -18,10 +18,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
@@ -50,7 +56,7 @@ public class UserServiceImpl implements UserService {
     @Autowired
     private RestTemplate restTemplate;
 
-    @Value("${approver.service.url:http://localhost:8087}")
+    @Value("${approver.service.url:http://localhost:8088}")
     private String approverServiceUrl;
 
     @Value("${app.frontend-url:http://localhost:5173}")
@@ -63,7 +69,7 @@ public class UserServiceImpl implements UserService {
         }
 
         String identifier = loginRequest.getUsername().trim();
-        String rawPassword = loginRequest.getPassword().trim();
+        String rawPassword = loginRequest.getPassword();
 
         Optional<User> userOpt = userRepository.findByUsername(identifier);
         if (userOpt.isEmpty()) {
@@ -84,13 +90,14 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public void submitRegistration(SignupRequest signUpRequest) {
         String username = signUpRequest.getUsername().trim();
         String email = signUpRequest.getEmail().trim();
 
         ERole requestedRole = resolveRole(signUpRequest.getRole());
-        if (requestedRole == ERole.ADMIN) {
-            throw new RuntimeException("Self-registration as ADMIN is not permitted.");
+        if (requestedRole == ERole.ADMIN || requestedRole == ERole.SADA) {
+            throw new RuntimeException(UserConstants.ERR_CANNOT_SELF_REGISTER_PRIVILEGED_ROLE);
         }
 
         if (userRepository.existsByUsername(username)) {
@@ -108,8 +115,12 @@ public class UserServiceImpl implements UserService {
         }
 
         PendingRegistration pending = new PendingRegistration(
-                username, email, passwordEncoder.encode(signUpRequest.getPassword().trim()), requestedRole);
-        pending = pendingRegistrationRepository.save(pending);
+                username, email, passwordEncoder.encode(signUpRequest.getPassword()), requestedRole);
+        try {
+            pending = pendingRegistrationRepository.save(pending);
+        } catch (DataIntegrityViolationException e) {
+            throw new RuntimeException("Error: A registration with this username or email is already taken or pending approval.");
+        }
 
         submitApprovalTask(pending);
     }
@@ -131,14 +142,27 @@ public class UserServiceImpl implements UserService {
             headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
 
-            restTemplate.postForEntity(approverServiceUrl + "/api/approver/tasks/submit", entity, Void.class);
+            ResponseEntity<Map> response = restTemplate.postForEntity(approverServiceUrl + "/api/approver/tasks/submit", entity, Map.class);
+            if (response != null && response.getBody() != null) {
+                Object taskIdObj = response.getBody().get("id");
+                if (taskIdObj == null) {
+                    taskIdObj = response.getBody().get("taskId");
+                }
+                if (taskIdObj != null) {
+                    pending.setApprovalTaskId(String.valueOf(taskIdObj));
+                    pendingRegistrationRepository.save(pending);
+                }
+            }
         } catch (Exception e) {
-            log.warn("Failed to submit USER_REGISTRATION approval task for pending registration {} ({}): {}",
+            log.error("Failed to submit USER_REGISTRATION approval task for pending registration {} ({}): {}",
                     pending.getId(), e.getClass().getSimpleName(), e.getMessage());
+            pending.setApprovalTaskId("SUBMISSION_FAILED");
+            pendingRegistrationRepository.save(pending);
         }
     }
 
     @Override
+    @Transactional
     public void approveRegistration(Long pendingRegistrationId) {
         PendingRegistration pending = pendingRegistrationRepository.findByIdAndStatus(pendingRegistrationId, RegistrationStatus.PENDING)
                 .orElseThrow(() -> new RuntimeException(
@@ -159,7 +183,11 @@ public class UserServiceImpl implements UserService {
 
         user.setPassword(pending.getPassword());
         user.setRole(pending.getRequestedRole());
-        userRepository.save(user);
+        try {
+            userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            throw new RuntimeException("Error: Username or email is already in use by an active user.");
+        }
 
         pending.setStatus(RegistrationStatus.APPROVED);
         pendingRegistrationRepository.save(pending);
@@ -173,6 +201,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public void rejectRegistration(Long pendingRegistrationId, String reason) {
         PendingRegistration pending = pendingRegistrationRepository.findByIdAndStatus(pendingRegistrationId, RegistrationStatus.PENDING)
                 .orElseThrow(() -> new RuntimeException(
@@ -204,6 +233,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public void processForgotPassword(ForgotPasswordRequest request, String frontendUrl) throws Exception {
         Optional<User> userOptional = userRepository.findByEmail(request.getEmail().trim());
 
@@ -220,6 +250,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public void processResetPassword(ResetPasswordRequest request) throws Exception {
         Optional<User> userOptional = userRepository.findByResetPasswordToken(request.getToken());
 
@@ -233,7 +264,7 @@ public class UserServiceImpl implements UserService {
             throw new IllegalArgumentException("Error: Reset link has expired. Please request a new one.");
         }
 
-        user.setPassword(passwordEncoder.encode(request.getNewPassword().trim()));
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         user.setResetPasswordToken(null);
         user.setResetPasswordExpires(null);
         userRepository.save(user);
@@ -245,6 +276,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public User updateProfile(Long userId, UpdateProfileRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException(UserConstants.ERR_USER_NOT_FOUND));
@@ -272,6 +304,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public void changePassword(Long userId, ChangePasswordRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException(UserConstants.ERR_USER_NOT_FOUND));
@@ -280,7 +313,7 @@ public class UserServiceImpl implements UserService {
             throw new RuntimeException("Error: Current password is incorrect.");
         }
 
-        user.setPassword(passwordEncoder.encode(request.getNewPassword().trim()));
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
     }
 
@@ -292,6 +325,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public com.kce.kmrl.user.dto.UserManagementDTO changeUserRole(Long userId, String newRole) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException(UserConstants.ERR_USER_NOT_FOUND));
@@ -301,16 +335,47 @@ public class UserServiceImpl implements UserService {
         } catch (IllegalArgumentException e) {
             throw new RuntimeException("Error: Invalid role '" + newRole + "'. Must be one of: ADMIN, OC, MDS, SADA.");
         }
+
+        if (user.getRole() == ERole.ADMIN && role != ERole.ADMIN) {
+            String currentUsername = getCurrentAuthenticatedUsername();
+            if (user.getUsername().equalsIgnoreCase(currentUsername)) {
+                throw new RuntimeException("Error: Administrators cannot demote their own ADMIN role.");
+            }
+            if (userRepository.countByRoleAndActiveTrue(ERole.ADMIN) <= 1) {
+                throw new RuntimeException("Error: Cannot demote the last remaining active ADMIN account.");
+            }
+        }
+
         user.setRole(role);
         return toManagementDTO(userRepository.save(user));
     }
 
     @Override
+    @Transactional
     public com.kce.kmrl.user.dto.UserManagementDTO setUserActive(Long userId, boolean active) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException(UserConstants.ERR_USER_NOT_FOUND));
+
+        if (user.getRole() == ERole.ADMIN && !active) {
+            String currentUsername = getCurrentAuthenticatedUsername();
+            if (user.getUsername().equalsIgnoreCase(currentUsername)) {
+                throw new RuntimeException("Error: Administrators cannot deactivate their own account.");
+            }
+            if (userRepository.countByRoleAndActiveTrue(ERole.ADMIN) <= 1) {
+                throw new RuntimeException("Error: Cannot deactivate the last remaining active ADMIN account.");
+            }
+        }
+
         user.setActive(active);
         return toManagementDTO(userRepository.save(user));
+    }
+
+    private String getCurrentAuthenticatedUsername() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof UserDetails ud) {
+            return ud.getUsername();
+        }
+        return "";
     }
 
     private com.kce.kmrl.user.dto.UserManagementDTO toManagementDTO(User u) {
@@ -318,4 +383,4 @@ public class UserServiceImpl implements UserService {
                 u.getId(), u.getUsername(), u.getEmail(),
                 u.getRole().name(), u.isActive());
     }
-}
+}

@@ -4,14 +4,68 @@ server:
 spring:
   application:
     name: eureka-server
+  security:
+    user:
+      name: ${EUREKA_USER:eureka}
+      password: ${EUREKA_PASSWORD:eureka123}
 
 eureka:
   client:
     register-with-eureka: false
     fetch-registry: false
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://${EUREKA_USER:eureka}:${EUREKA_PASSWORD:eureka123}@localhost:8761/eureka/
 
   server:
-    enable-self-preservation: false
+    enable-self-preservation: true
     peer-node-read-timeout-ms: 10000
+
+---
+# -----------------------------------------------------------------------------
+# Development / Local Profile Settings
+# -----------------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: dev
+eureka:
+  server:
+    enable-self-preservation: false
+
+---
+# -----------------------------------------------------------------------------
+# Peer 1 Cluster Profile
+# -----------------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: peer1
+server:
+  port: 8761
+eureka:
+  instance:
+    hostname: peer1
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://${EUREKA_USER:eureka}:${EUREKA_PASSWORD:eureka123}@peer2:8762/eureka/
+
+---
+# -----------------------------------------------------------------------------
+# Peer 2 Cluster Profile
+# -----------------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: peer2
+server:
+  port: 8762
+eureka:
+  instance:
+    hostname: peer2
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://${EUREKA_USER:eureka}:${EUREKA_PASSWORD:eureka123}@peer1:8761/eureka/

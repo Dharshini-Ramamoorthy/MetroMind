@@ -18,4 +18,5 @@ public interface MaintenanceService {
     void deleteTicket(String ticketId);
     void markTrainPulled(String ticketId, String trainNumber);
     MaintenanceResponse retryApprovalSubmission(String ticketId);
+    MaintenanceResponse retryWithdrawal(String ticketId);
 }

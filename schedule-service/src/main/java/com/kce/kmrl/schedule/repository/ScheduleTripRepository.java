@@ -26,4 +26,7 @@ public interface ScheduleTripRepository extends MongoRepository<ScheduleTrip, St
 
     List<ScheduleTrip> findByAssignedTrainIdAndStatusIn(String assignedTrainId,
                                                          List<TripStatus> statuses);
+
+    List<ScheduleTrip> findByServiceDateGreaterThanEqualAndStatusIn(String serviceDate,
+                                                                    List<TripStatus> statuses);
 }

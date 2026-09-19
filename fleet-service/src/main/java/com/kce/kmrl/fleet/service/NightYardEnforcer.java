@@ -32,7 +32,7 @@ public class NightYardEnforcer {
         this.scheduleServiceClient = scheduleServiceClient;
     }
 
-    @Scheduled(fixedRate = 3000)
+    @Scheduled(fixedRateString = "${fleet.night-yard.check-interval-ms:180000}")
     public void enforceNightMaintenanceWindow() {
         LocalTime now = LocalTime.now(KOLKATA);
         int currentMinutes = now.getHour() * 60 + now.getMinute();

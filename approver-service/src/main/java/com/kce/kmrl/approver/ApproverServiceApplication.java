@@ -5,13 +5,11 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.ComponentScan;
 import org.springframework.data.mongodb.repository.config.EnableMongoRepositories;
 import org.springframework.web.client.RestClient;
 
-@SpringBootApplication
-@ComponentScan
-@EnableMongoRepositories
+@SpringBootApplication(scanBasePackages = "com.kce.kmrl.approver")
+@EnableMongoRepositories(basePackages = "com.kce.kmrl.approver.repository")
 @EnableDiscoveryClient
 public class ApproverServiceApplication {
 

@@ -24,8 +24,12 @@ public final class TimeUtil {
         return now.getHour() * 60 + now.getMinute();
     }
 
+    public static LocalDate todayDate() {
+        return LocalDate.now(KOLKATA);
+    }
+
     public static String today() {
-        return LocalDate.now(KOLKATA).toString();
+        return todayDate().toString();
     }
 
     public static boolean isPeak(int minutesSinceMidnight) {

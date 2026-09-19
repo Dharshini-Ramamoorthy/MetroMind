@@ -1,6 +1,7 @@
 package com.kce.kmrl.fleet.service;
 
 import com.kce.kmrl.fleet.client.MaintenanceServiceClient;
+import com.kce.kmrl.fleet.dto.FleetOverrideRequest;
 import com.kce.kmrl.fleet.dto.FleetSummaryDto;
 import com.kce.kmrl.fleet.dto.TrackGroupDto;
 import com.kce.kmrl.fleet.model.AuditLedgerEntry;
@@ -38,7 +39,7 @@ public class FleetService {
                          AuditLedgerRepository ledgerRepository,
                          MaintenanceServiceClient maintenanceServiceClient,
                          RestTemplate restTemplate,
-                         @Value("${approver.service.url:http://localhost:8087}") String approverServiceUrl) {
+                         @Value("${approver.service.url:http://localhost:8088}") String approverServiceUrl) {
         this.trainRepository = trainRepository;
         this.ledgerRepository = ledgerRepository;
         this.maintenanceServiceClient = maintenanceServiceClient;
@@ -216,6 +217,45 @@ public class FleetService {
             }
         }
         return false;
+    }
+
+    public Map<String, Object> requestOverride(String trainId, FleetOverrideRequest request) {
+        TrainAsset train = getTrainById(trainId);
+        if (train == null) {
+            throw new IllegalArgumentException("Train " + trainId + " not found");
+        }
+
+        String baseUrl = approverServiceUrl != null ? approverServiceUrl.trim() : "http://localhost:8088";
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        String url = baseUrl + "/api/approver/tasks/submit";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-User-Id", "fleet-service");
+        headers.set("X-User-Role", "SYSTEM");
+        headers.set("Content-Type", "application/json");
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("targetEntityId", train.getId());
+        payload.put("requestType", "FLEET_OVERRIDE");
+        payload.put("title", "Fleet Override Request for Train " + (train.getTrainNumber() != null ? train.getTrainNumber() : train.getId()));
+        payload.put("description", request.getReason());
+        payload.put("priority", "HIGH");
+        payload.put("requestedBy", "fleet-service");
+        payload.put("assignedApproverRole", "SADA");
+
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
+
+        try {
+            org.springframework.http.ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
+            log.info("Successfully submitted FLEET_OVERRIDE approval task for train {} to approver-service", trainId);
+            logAuditEntry(train.getTrainNumber() != null ? train.getTrainNumber() : trainId, "OVERRIDE_REQUESTED", "APPROVER_TASK");
+            return response.getBody() != null ? (Map<String, Object>) response.getBody() : Map.of("status", "SUBMITTED", "trainId", trainId);
+        } catch (Exception e) {
+            log.error("Failed to submit FLEET_OVERRIDE task for train {} to {}: {}", trainId, url, e.getMessage());
+            throw new RuntimeException("Failed to submit fleet override request to approver-service: " + e.getMessage(), e);
+        }
     }
 
     private void logAuditEntry(String trainNumber, String vector, String opCode) {

@@ -37,12 +37,9 @@ public class ResilientFleetClient {
         List<TrainAssetDto> standby = fleetClient.getStandbyTrains();
         if (standby == null) return Collections.emptyList();
 
-        Set<String> activeMaintenanceTickets = maintenanceClient.findTrainsWithActiveTickets();
-
         return standby.stream()
                 .filter(t -> t != null && t.getStatus() != null)
                 .filter(t -> !"IN_MAINTENANCE".equalsIgnoreCase(t.getStatus()))
-                .filter(t -> !matchesMaintenanceSet(t, activeMaintenanceTickets))
                 .collect(Collectors.toList());
     }
 
@@ -72,15 +69,26 @@ public class ResilientFleetClient {
         List<TrackGroupDto> groups = fleetClient.getYardTracks();
         if (groups == null) return Collections.emptyList();
 
-        Set<String> activeMaintenanceTickets = maintenanceClient.findTrainsWithActiveTickets();
-
         return groups.stream()
                 .filter(g -> g.getTrains() != null)
                 .flatMap(g -> g.getTrains().stream())
                 .filter(t -> t != null && t.getStatus() != null)
                 .filter(t -> !"IN_MAINTENANCE".equalsIgnoreCase(t.getStatus()))
+                .collect(Collectors.toList());
+    }
+
+    public List<TrainAssetDto> filterOutMaintenance(List<TrainAssetDto> trains, Set<String> activeMaintenanceTickets) {
+        if (trains == null || trains.isEmpty()) return Collections.emptyList();
+        if (activeMaintenanceTickets == null || activeMaintenanceTickets.isEmpty()) return trains;
+        return trains.stream()
                 .filter(t -> !matchesMaintenanceSet(t, activeMaintenanceTickets))
                 .collect(Collectors.toList());
+    }
+
+    public List<TrainAssetDto> filterOutMaintenance(List<TrainAssetDto> trains) {
+        if (trains == null || trains.isEmpty()) return Collections.emptyList();
+        Set<String> activeTickets = maintenanceClient.findTrainsWithActiveTickets();
+        return filterOutMaintenance(trains, activeTickets);
     }
 
     @Retry(name = "fleetService")
@@ -96,30 +104,7 @@ public class ResilientFleetClient {
     }
 
     private boolean matchesMaintenanceSet(TrainAssetDto train, Set<String> activeTickets) {
-        if (train == null || activeTickets == null || activeTickets.isEmpty()) return false;
-
-        String id = train.getId() != null ? train.getId().trim().toUpperCase() : "";
-        String number = train.getTrainNumber() != null ? train.getTrainNumber().trim().toUpperCase() : "";
-
-        for (String active : activeTickets) {
-            String actUpper = active.trim().toUpperCase();
-            if (!id.isEmpty() && (id.equals(actUpper) || id.contains(actUpper) || actUpper.contains(id))) return true;
-            if (!number.isEmpty() && (number.equals(actUpper) || number.contains(actUpper) || actUpper.contains(number))) return true;
-
-            String actDigits = actUpper.replaceAll("\\D+", "");
-            if (!actDigits.isEmpty()) {
-                try {
-                    int actNum = Integer.parseInt(actDigits);
-
-                    String idDigits = id.replaceAll("\\D+", "");
-                    if (!idDigits.isEmpty() && Integer.parseInt(idDigits) == actNum) return true;
-
-                    String numDigits = number.replaceAll("\\D+", "");
-                    if (!numDigits.isEmpty() && Integer.parseInt(numDigits) == actNum) return true;
-                } catch (Exception ignored) {}
-            }
-        }
-        return false;
+        return com.kce.kmrl.schedule.util.TrainIdUtil.matchesMaintenanceSet(train, activeTickets);
     }
 
     private List<TrainAssetDto> fallbackGetStandbyTrains(Throwable ex) {
@@ -138,7 +123,7 @@ public class ResilientFleetClient {
     private List<TrainAssetDto> fallbackGetAvailableTrains(Throwable ex) {
         log.warn("fleet-service unreachable while fetching the yard for schedule generation ({}): {}.",
                 ex.getClass().getSimpleName(), ex.getMessage());
-        return null;
+        return Collections.emptyList();
     }
 
     private void fallbackUpdateTrainStatus(String trainId, String status, Throwable ex) {

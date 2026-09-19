@@ -37,7 +37,7 @@ public class AdminAccountSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        boolean adminExists = userRepository.findAll().stream().anyMatch(u -> u.getRole() == ERole.ADMIN);
+        boolean adminExists = userRepository.existsByRole(ERole.ADMIN);
         if (adminExists) {
             return;
         }

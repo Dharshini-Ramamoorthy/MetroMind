@@ -59,6 +59,9 @@ public class ScheduleService {
     @Value("${schedule.default-weather:Clear}")
     private String defaultWeather;
 
+    @Value("${internal.service-secret:}")
+    private String internalServiceSecret;
+
     public ScheduleService(ScheduleTripRepository tripRepository,
                            DynamicScheduleEngine scheduleEngine,
                            ResilientFleetClient fleetClient,
@@ -87,11 +90,11 @@ public class ScheduleService {
             throw new IllegalArgumentException("serviceDate must be yyyy-MM-dd.");
         }
 
-        if (date.isBefore(LocalDate.now())) {
+        if (date.isBefore(TimeUtil.todayDate())) {
             throw new IllegalArgumentException("Cannot generate schedule for past date: " + serviceDate);
         }
 
-        boolean isToday = date.equals(LocalDate.now());
+        boolean isToday = date.equals(TimeUtil.todayDate());
         int nowM = isToday ? TimeUtil.nowMinutes() : TimeUtil.SERVICE_START_MIN;
 
         List<ScheduleTrip> existing = tripRepository.findByServiceDate(serviceDate);
@@ -149,7 +152,7 @@ public class ScheduleService {
             throw new IllegalStateException("No available trains returned from fleet-service. Cannot generate schedule.");
         }
 
-        candidatePool.sort(Comparator.comparingLong(TrainAssetDto::getTotalMileageKm));
+        candidatePool.sort(Comparator.comparingLong(train -> train.getTotalMileageKm() != null ? train.getTotalMileageKm().longValue() : 0L));
 
         ServiceDayProfileResolver.DayProfile dayProfile = dayProfileResolver.resolve(date);
         boolean holiday = dayProfile.dayType() == ServiceDayProfileResolver.DayType.PUBLIC_HOLIDAY;
@@ -158,43 +161,8 @@ public class ScheduleService {
 
         t = System.currentTimeMillis();
         Map<Integer, ForecastScheduleResponse> forecastCache = forecastClient.getDailyProfile(date, holiday, festival, weather);
-
-        if (forecastCache == null || forecastCache.isEmpty()) {
-
-            java.util.concurrent.ExecutorService forecastPool =
-                    java.util.concurrent.Executors.newFixedThreadPool(8);
-            java.util.concurrent.ConcurrentHashMap<Integer, ForecastScheduleResponse> forecastCacheRaw =
-                    new java.util.concurrent.ConcurrentHashMap<>();
-
-            java.util.List<java.util.concurrent.CompletableFuture<Void>> futures = new java.util.ArrayList<>();
-            for (int m = DAY_START; m < DAY_END; m += 30) {
-                final int slotMinute = m;
-                final LocalTime slotTime = LocalTime.of(m / 60, m % 60);
-                futures.add(java.util.concurrent.CompletableFuture.runAsync(() -> {
-                    try {
-                        ForecastScheduleResponse rec = forecastClient.getRecommendation(date, slotTime, holiday, festival, weather);
-                        if (rec != null) {
-                            forecastCacheRaw.put(slotMinute, rec);
-                        }
-                    } catch (Exception ex) {
-                        log.warn("Forecast call failed for slot {}:{} — using fallback. {}",
-                                slotTime.getHour(), slotTime.getMinute(), ex.getMessage());
-                    }
-                }, forecastPool));
-            }
-            try {
-                java.util.concurrent.CompletableFuture.allOf(futures.toArray(new java.util.concurrent.CompletableFuture[0]))
-                        .get(5, java.util.concurrent.TimeUnit.SECONDS);
-            } catch (Exception ex) {
-                log.warn("Parallel forecast slots timed out — continuing with partial cache ({} slots).", forecastCacheRaw.size());
-            } finally {
-                forecastPool.shutdown();
-            }
-
-            forecastCache = new LinkedHashMap<>();
-            for (Map.Entry<Integer, ForecastScheduleResponse> e : forecastCacheRaw.entrySet()) {
-                forecastCache.put(e.getKey(), e.getValue());
-            }
+        if (forecastCache == null) {
+            forecastCache = Collections.emptyMap();
         }
 
         int maxDemandFleet = forecastCache.values().stream()
@@ -206,8 +174,12 @@ public class ScheduleService {
         int peakFleetCount = (maxDemandFleet > 0) ? Math.min(maxDemandFleet, candidatePool.size()) : Math.min(20, candidatePool.size());
 
         int reserveCount = Math.min(3, Math.max(2, candidatePool.size() - peakFleetCount));
+        reserveCount = Math.min(reserveCount, Math.max(0, candidatePool.size() - 1));
 
         List<TrainAssetDto> activePool = new ArrayList<>(candidatePool.subList(0, candidatePool.size() - reserveCount));
+        if (activePool.isEmpty()) {
+            throw new IllegalStateException("Not enough operational trains to generate a schedule: " + candidatePool.size() + " available");
+        }
         List<TrainAssetDto> yardReserveFleet = candidatePool.subList(candidatePool.size() - reserveCount, candidatePool.size());
 
         if (isToday) {
@@ -423,7 +395,7 @@ public class ScheduleService {
                 String otherRoute     = preferredRoute.equals(ROUTE_A) ? ROUTE_B : ROUTE_A;
                 String routeName      = preferredRoute;
                 String tripCode       = "RUN-AI-" + String.format("%03d", seq);
-                String tripId         = "TR-" + serviceDate + "-AI-" + String.format("%03d", seq);
+                String tripId         = "TR-" + serviceDate + "-AI-" + String.format("%03d", seq) + "-" + UUID.randomUUID().toString().substring(0, 6);
 
                 ScheduleTrip trip = new ScheduleTrip();
                 trip.setId(tripId); trip.setTripCode(tripCode);
@@ -558,6 +530,7 @@ public class ScheduleService {
             log.info("TOTAL GENERATION TIME = {} ms", System.currentTimeMillis() - totalStart);
             return finalTrips;
         } finally {
+            trainAssignmentService.clearCache();
             scheduleLock.unlock();
         }
     }
@@ -572,11 +545,14 @@ public class ScheduleService {
             payload.put("priority", "HIGH");
             payload.put("requestedBy", triggeredBy != null ? triggeredBy : "AI_CRON");
 
-            loadBalancedRestClient.post()
+            var requestSpec = loadBalancedRestClient.post()
                     .uri("http://approver-service/api/approver/tasks/submit")
                     .header("X-User-Id", "schedule-service")
-                    .header("X-User-Role", "SADA")
-                    .body(payload)
+                    .header("X-User-Role", "SADA");
+            if (internalServiceSecret != null && !internalServiceSecret.isBlank()) {
+                requestSpec.header("X-Gateway-Secret", internalServiceSecret);
+            }
+            requestSpec.body(payload)
                     .retrieve()
                     .toBodilessEntity();
 
@@ -596,11 +572,14 @@ public class ScheduleService {
             payload.put("priority", "HIGH");
             payload.put("requestedBy", hasText(triggeredBy) ? triggeredBy : "OC");
 
-            loadBalancedRestClient.post()
+            var requestSpec = loadBalancedRestClient.post()
                     .uri("http://approver-service/api/approver/tasks/submit")
                     .header("X-User-Id", "schedule-service")
-                    .header("X-User-Role", "SADA")
-                    .body(payload)
+                    .header("X-User-Role", "SADA");
+            if (internalServiceSecret != null && !internalServiceSecret.isBlank()) {
+                requestSpec.header("X-Gateway-Secret", internalServiceSecret);
+            }
+            requestSpec.body(payload)
                     .retrieve()
                     .toBodilessEntity();
 
@@ -618,10 +597,6 @@ public class ScheduleService {
 
     public List<ScheduleTrip> getTripsInCurrentTimeWindow() {
         return getTripsByDate(TimeUtil.today());
-    }
-
-    public List<ScheduleTrip> getAllScheduledTrips() {
-        return tripRepository.findAll();
     }
 
     public List<ScheduleTrip> getTripsForDate(String date) {
@@ -651,7 +626,7 @@ public class ScheduleService {
 
             String serviceDate = request.getServiceDate().trim();
             LocalDate requestedServiceDate = LocalDate.parse(serviceDate);
-            if (requestedServiceDate.isBefore(LocalDate.now())) {
+            if (requestedServiceDate.isBefore(TimeUtil.todayDate())) {
                 throw new IllegalArgumentException("serviceDate cannot be in the past");
             }
 
@@ -774,6 +749,7 @@ public class ScheduleService {
             pushSingleTripApprovalTask(saved, hasText(request.getSource()) ? request.getSource() : "OC");
             return saved;
         } finally {
+            trainAssignmentService.clearCache();
             scheduleLock.unlock();
         }
     }
@@ -784,7 +760,14 @@ public class ScheduleService {
         if (trip.getStatus() != TripStatus.PROPOSED) {
             throw new IllegalStateException("Only PROPOSED trips may be deleted.");
         }
+        String actor = hasText(callerName) ? callerName.trim() : (hasText(callerRole) ? callerRole.trim() : "unknown");
+        String auditReason = hasText(reason) ? reason.trim() : "Deleted by " + actor;
+        trip.setChangedBy(actor);
+        trip.setChangedAt(Instant.now());
+        trip.setChangeReason(auditReason);
+        tripRepository.save(trip);
         tripRepository.deleteById(tripId);
+        log.info("Deleted proposed trip {} by {} (role: {}): {}", tripId, actor, callerRole, auditReason);
     }
 
     public void validateFullSchedule(List<ScheduleTrip> dayTrips) {
@@ -846,13 +829,8 @@ public class ScheduleService {
         }
 
         StringBuilder platformError = new StringBuilder();
-        if (!activeTrips.isEmpty()) {
-            ScheduleTrip dummy = new ScheduleTrip();
-            dummy.setId("DUMMY");
-            dummy.setStartMinutes(-100);
-            dummy.setEndMinutes(-50);
-            dummy.setRouteName(ROUTE_A);
-            if (!safetyValidator.validatePlatformOccupancy(dummy, activeTrips, platformError)) {
+        for (ScheduleTrip trip : activeTrips) {
+            if (!safetyValidator.validatePlatformOccupancy(trip, activeTrips, platformError)) {
                 throw new IllegalArgumentException("Platform capacity conflict: " + platformError.toString());
             }
         }
@@ -866,6 +844,19 @@ public class ScheduleService {
             List<ScheduleTrip> proposed = allTrips.stream()
                     .filter(t -> t.getStatus() == TripStatus.PROPOSED)
                     .collect(Collectors.toList());
+
+            if (proposed.isEmpty()) {
+                return 0;
+            }
+
+            List<ScheduleTrip> tripsToValidate = allTrips.stream()
+                    .filter(t -> t.getStatus() == TripStatus.PROPOSED
+                            || t.getStatus() == TripStatus.PLANNED
+                            || t.getStatus() == TripStatus.ACTIVE)
+                    .collect(Collectors.toList());
+
+            validateFullSchedule(tripsToValidate);
+
             proposed.forEach(t -> {
                 t.setStatus(TripStatus.PLANNED);
                 t.setChangedAt(Instant.now());
@@ -972,15 +963,21 @@ public class ScheduleService {
                     if (t2.getStartMinutes() < minAllowedStart) {
                         int duration = Math.max(45, t2.getEndMinutes() - t2.getStartMinutes());
                         int adjustedStart = minAllowedStart;
-                        int adjustedEnd = Math.min(adjustedStart + duration, TimeUtil.SERVICE_END_MIN);
-
-                        t2.setStartMinutes(adjustedStart);
-                        t2.setEndMinutes(adjustedEnd);
-                        t2.setStartTime(TimeUtil.formatMinutesToTime(adjustedStart));
-                        t2.setEndTime(TimeUtil.formatMinutesToTime(adjustedEnd));
-                        t2.setChangeReason("Anti-Collision Engine: Resolved timing overlap with " + t1.getTripCode());
-                        resolvedCount++;
-                        changed = true;
+                        if (adjustedStart + duration > TimeUtil.SERVICE_END_MIN) {
+                            t2.setAssignmentStatus("NOT_POSSIBLE");
+                            t2.setChangeReason("Cannot resolve timing overlap with " + t1.getTripCode() + ": trip cannot be shifted within service hours (exceeds " + TimeUtil.SERVICE_END_MIN + " min).");
+                            log.warn("resolveScheduleCollisions: Trip {} cannot be shifted within service hours (end would be {} > {}).",
+                                    t2.getTripCode(), adjustedStart + duration, TimeUtil.SERVICE_END_MIN);
+                        } else {
+                            int adjustedEnd = adjustedStart + duration;
+                            t2.setStartMinutes(adjustedStart);
+                            t2.setEndMinutes(adjustedEnd);
+                            t2.setStartTime(TimeUtil.formatMinutesToTime(adjustedStart));
+                            t2.setEndTime(TimeUtil.formatMinutesToTime(adjustedEnd));
+                            t2.setChangeReason("Anti-Collision Engine: Resolved timing overlap with " + t1.getTripCode());
+                            resolvedCount++;
+                            changed = true;
+                        }
                     }
                 }
             }
@@ -988,44 +985,15 @@ public class ScheduleService {
         return resolvedCount;
     }
 
-    private void enforceRouteHeadway(List<ScheduleTrip> trips) {
-        if (trips == null || trips.isEmpty()) return;
-        final int floorMin = MIN_HEADWAY_SECONDS / 60;
-
-        Map<String, List<ScheduleTrip>> byRoute = trips.stream()
-                .filter(t -> t.getStatus() != TripStatus.CANCELLED)
-                .filter(t -> hasText(t.getRouteName()))
-                .collect(Collectors.groupingBy(t -> normalizeRoute(t.getRouteName())));
-
-        for (List<ScheduleTrip> routeTrips : byRoute.values()) {
-            routeTrips.sort(Comparator.comparingInt(ScheduleTrip::getStartMinutes));
-            for (int i = 1; i < routeTrips.size(); i++) {
-                ScheduleTrip prev = routeTrips.get(i - 1);
-                ScheduleTrip curr = routeTrips.get(i);
-                int gap = curr.getStartMinutes() - prev.getStartMinutes();
-                if (gap < floorMin) {
-                    int shift     = floorMin - gap;
-                    int newStart  = curr.getStartMinutes() + shift;
-                    int duration  = Math.max(45, curr.getEndMinutes() - curr.getStartMinutes());
-                    int newEnd    = Math.min(newStart + duration, TimeUtil.SERVICE_END_MIN);
-                    curr.setStartMinutes(newStart);
-                    curr.setEndMinutes(newEnd);
-                    curr.setStartTime(TimeUtil.formatMinutesToTime(newStart));
-                    curr.setEndTime(TimeUtil.formatMinutesToTime(newEnd));
-                    curr.setChangeReason("Route-Headway Guard: " + floorMin
-                            + "min floor enforced on " + curr.getRouteName());
-                    log.debug("Route headway enforced: {} shifted +{}min on {}",
-                            curr.getTripCode(), shift, curr.getRouteName());
-                }
-            }
-        }
-    }
-
-       public ScheduleTrip adjustTrip(String tripId, AdjustTripRequest request, String callerRole) {
+    public ScheduleTrip adjustTrip(String tripId, AdjustTripRequest request, String callerRole) {
         scheduleLock.lock();
         try {
             ScheduleTrip trip = tripRepository.findById(tripId)
                     .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
+
+            if (trip.getStatus() != TripStatus.PROPOSED && trip.getStatus() != TripStatus.PLANNED) {
+                throw new IllegalStateException("Only PROPOSED or PLANNED trips can be adjusted. Current status: " + trip.getStatus());
+            }
 
             String targetTrainId = hasText(request.getAssignedTrainId()) ? request.getAssignedTrainId().trim() : trip.getAssignedTrainId();
             String targetRoute = hasText(request.getRouteName()) ? request.getRouteName().trim() : trip.getRouteName();
@@ -1170,85 +1138,9 @@ public class ScheduleService {
         }
     }
 
-    private static String normalizeRoute(String raw) {
-        if (raw == null) return "";
-        return raw.replaceAll("[^a-zA-Z0-9]", "").toUpperCase();
-    }
-
-    private void assertPlatformAndHeadwaySafety(String tripId, String routeName, String serviceDate, int startMinutes, int endMinutes) {
-        int floorMinutes = MIN_HEADWAY_SECONDS / 60;
-        String normTargetRoute = normalizeRoute(routeName);
-
-        ScheduleTrip conflictingTrip = tripRepository.findByServiceDate(serviceDate).stream()
-                .filter(t -> tripId == null || !t.getId().equals(tripId))
-                .filter(t -> t.getStatus() != TripStatus.CANCELLED && t.getStatus() != TripStatus.MISSED)
-                .filter(t -> normalizeRoute(t.getRouteName()).equals(normTargetRoute))
-                .filter(t -> Math.abs(t.getStartMinutes() - startMinutes) < floorMinutes || Math.abs(t.getEndMinutes() - endMinutes) < floorMinutes)
-                .findFirst()
-                .orElse(null);
-
-        if (conflictingTrip != null) {
-            throw new IllegalArgumentException("Cannot schedule/modify trip");
-        }
-    }
-
     private static boolean matchesTrainIdentifier(ScheduleTrip trip, String targetTrainId) {
-        if (trip == null || targetTrainId == null) return false;
-        String rawId = targetTrainId.trim().toUpperCase();
-        String targetDigits = rawId.replaceAll("\\D+", "");
-
-        if (targetDigits.isEmpty()) {
-            String assignedId = trip.getAssignedTrainId() != null ? trip.getAssignedTrainId().trim().toUpperCase() : "";
-            String assignedName = trip.getAssignedTrainName() != null ? trip.getAssignedTrainName().trim().toUpperCase() : "";
-            return assignedId.equalsIgnoreCase(rawId) || assignedName.equalsIgnoreCase(rawId);
-        }
-
-        int targetNum = Integer.parseInt(targetDigits);
-
-        String idDigits = trip.getAssignedTrainId() != null ? trip.getAssignedTrainId().replaceAll("\\D+", "") : "";
-        if (!idDigits.isEmpty()) {
-            try {
-                if (Integer.parseInt(idDigits) == targetNum) return true;
-            } catch (Exception ignored) {}
-        }
-
-        String nameDigits = trip.getAssignedTrainName() != null ? trip.getAssignedTrainName().replaceAll("\\D+", "") : "";
-        if (!nameDigits.isEmpty()) {
-            try {
-                if (Integer.parseInt(nameDigits) == targetNum) return true;
-            } catch (Exception ignored) {}
-        }
-
-        return false;
+        return com.kce.kmrl.schedule.util.TrainIdUtil.matchesTrainIdentifier(trip, targetTrainId);
     }
-
-    private static final Map<String, String> KMRL_RIVER_NAMES = Map.ofEntries(
-            Map.entry("TS-01", "KMRL Set 01 (Periyar)"),
-            Map.entry("TS-02", "KMRL Set 02 (Pamba)"),
-            Map.entry("TS-03", "KMRL Set 03 (Kabani)"),
-            Map.entry("TS-04", "KMRL Set 04 (Bhavani)"),
-            Map.entry("TS-05", "KMRL Set 05 (Chaliyar)"),
-            Map.entry("TS-06", "KMRL Set 06 (Bharathapuzha)"),
-            Map.entry("TS-07", "KMRL Set 07 (Meenachil)"),
-            Map.entry("TS-08", "KMRL Set 08 (Kaveri)"),
-            Map.entry("TS-09", "KMRL Set 09 (Muvattupuzha)"),
-            Map.entry("TS-10", "KMRL Set 10 (Chalakkudy)"),
-            Map.entry("TS-11", "KMRL Set 11 (Achankovil)"),
-            Map.entry("TS-12", "KMRL Set 12 (Manimala)"),
-            Map.entry("TS-13", "KMRL Set 13 (Neyyar)"),
-            Map.entry("TS-14", "KMRL Set 14 (Kallada)"),
-            Map.entry("TS-15", "KMRL Set 15 (Valapattanam)"),
-            Map.entry("TS-16", "KMRL Set 16 (Gayathri)"),
-            Map.entry("TS-17", "KMRL Set 17 (Siruvani)"),
-            Map.entry("TS-18", "KMRL Set 18 (Korapuzha)"),
-            Map.entry("TS-19", "KMRL Set 19 (Irikkur)"),
-            Map.entry("TS-20", "KMRL Set 20 (Thanikkudam)"),
-            Map.entry("TS-21", "KMRL Set 21 (Pamba-II)"),
-            Map.entry("TS-22", "KMRL Set 22 (Kuthiran)"),
-            Map.entry("TS-23", "KMRL Set 23 (Pennar)"),
-            Map.entry("TS-24", "KMRL Set 24 (Chaliyar-II)"),
-            Map.entry("TS-25", "KMRL Set 25 (Neyyar-II)")
-    );
 
     private static String normalizeTrainId(String input) {
         if (input == null || input.isBlank()) return "";
@@ -1263,33 +1155,48 @@ public class ScheduleService {
         return clean.toUpperCase();
     }
 
-    private void assertNoTrainCollisionForModification(String tripId, String trainId, String serviceDate, int startMinutes, int endMinutes) {
-        if (!hasText(trainId)) return;
-
-        String normTrainId = normalizeTrainId(trainId);
-        String displayTrainName = KMRL_RIVER_NAMES.getOrDefault(normTrainId, normTrainId);
-
-        ScheduleTrip collisionTrip = tripRepository.findByServiceDate(serviceDate).stream()
-                .filter(t -> tripId == null || !t.getId().equals(tripId))
-                .filter(t -> t.getStatus() != TripStatus.CANCELLED && t.getStatus() != TripStatus.MISSED)
-                .filter(t -> matchesTrainIdentifier(t, normTrainId))
-                .filter(t -> !(endMinutes + 3 <= t.getStartMinutes() || startMinutes >= t.getEndMinutes() + 3))
-                .findFirst()
-                .orElse(null);
-
-        if (collisionTrip != null) {
-            throw new IllegalArgumentException("Cannot schedule/modify trip");
-        }
-    }
+    private static final Map<TripStatus, Set<TripStatus>> ALLOWED_STATUS_TRANSITIONS = Map.of(
+            TripStatus.PROPOSED, Set.of(TripStatus.PLANNED, TripStatus.REJECTED, TripStatus.CANCELLED),
+            TripStatus.PLANNED, Set.of(TripStatus.ACTIVE, TripStatus.DELAYED, TripStatus.CANCELLED, TripStatus.MISSED, TripStatus.AWAITING_REPLACEMENT),
+            TripStatus.ACTIVE, Set.of(TripStatus.COMPLETED, TripStatus.DELAYED, TripStatus.CANCELLED),
+            TripStatus.DELAYED, Set.of(TripStatus.ACTIVE, TripStatus.COMPLETED, TripStatus.CANCELLED, TripStatus.MISSED),
+            TripStatus.AWAITING_REPLACEMENT, Set.of(TripStatus.PLANNED, TripStatus.ACTIVE, TripStatus.CANCELLED, TripStatus.MISSED)
+    );
 
     public ScheduleTrip updateTripStatus(String tripId, StatusUpdateRequest request, String callerRole) {
         ScheduleTrip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new IllegalArgumentException("Trip not found: " + tripId));
-        if (request != null && request.getStatus() != null) {
-            trip.setStatus(TripStatus.valueOf(String.valueOf(request.getStatus()).toUpperCase()));
-            trip.setChangedBy(callerRole != null ? callerRole.replace("ROLE_", "") : "OC");
-            trip.setChangedAt(Instant.now());
+        if (request == null || request.getStatus() == null || request.getStatus().isBlank()) {
+            throw new IllegalArgumentException("Status must not be blank.");
         }
+
+        TripStatus newStatus;
+        try {
+            newStatus = TripStatus.valueOf(request.getStatus().trim().toUpperCase(Locale.ENGLISH));
+        } catch (IllegalArgumentException | NullPointerException ex) {
+            throw new IllegalArgumentException("Unknown trip status: '" + request.getStatus() + "'. Allowed statuses: " + Arrays.toString(TripStatus.values()));
+        }
+
+        TripStatus currentStatus = trip.getStatus();
+        if (currentStatus == newStatus) {
+            return trip;
+        }
+
+        Set<TripStatus> allowed = ALLOWED_STATUS_TRANSITIONS.getOrDefault(currentStatus, Collections.emptySet());
+        if (!allowed.contains(newStatus)) {
+            throw new IllegalArgumentException("Disallowed status transition: cannot move trip from " + currentStatus + " to " + newStatus);
+        }
+
+        String role = (callerRole != null) ? callerRole.trim().toUpperCase(Locale.ENGLISH).replace("ROLE_", "") : "OC";
+        if (currentStatus == TripStatus.PROPOSED && (newStatus == TripStatus.PLANNED || newStatus == TripStatus.REJECTED)) {
+            if (!"SADA".equals(role) && !"SYSTEM".equals(role)) {
+                throw new IllegalStateException("Only SADA or SYSTEM callers can transition a trip from PROPOSED to " + newStatus + ". Current caller role: " + role);
+            }
+        }
+
+        trip.setStatus(newStatus);
+        trip.setChangedBy(role);
+        trip.setChangedAt(Instant.now());
         return tripRepository.save(trip);
     }
 
