@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MetroMind KMRL — Maintenance Supervisor Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --canvas: #F8FAFC;
+    --card: #FFFFFF;
+    --ink-heading: #0F172A;
+    --ink-body: #334155;
+    --ink-muted: #64748B;
+    --teal: #009688;
+    --teal-dark: #00786B;
+    --teal-light: #E0F2F1;
+    --emerald: #10B981;
+    --emerald-soft: #E6F4EA;
+    --amber: #F59E0B;
+    --amber-soft: #FEF7E0;
+    --rose: #EF4444;
+    --line: rgba(15, 23, 42, 0.08);
+    --shadow-sm: 0 1px 3px 0 rgba(0,0,0,0.05), 0 1px 2px -1px rgba(0,0,0,0.05);
+    --shadow-lg: 0 4px 6px -1px rgba(15,23,42,0.06), 0 20px 40px -8px rgba(15,23,42,0.12);
+    --r-md: 12px;
+    --r-lg: 16px;
+    --r-xl: 22px;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: var(--canvas); color: var(--ink-body); font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; line-height: 1.5; }
+  h1, h2, h3 { font-family: 'Plus Jakarta Sans', sans-serif; color: var(--ink-heading); letter-spacing: -0.02em; font-weight: 700; }
+  a { color: inherit; text-decoration: none; }
+  .container { max-width: 1240px; margin: 0 auto; padding: 0 32px; }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; }
+  svg { display: block; }
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
+
+  .top-ribbon { background: var(--ink-heading); color: rgba(255,255,255,0.8); font-size: 12px; }
+  .top-ribbon .container { display: flex; align-items: center; justify-content: space-between; padding: 7px 32px; }
+  .ribbon-left { display: flex; align-items: center; gap: 8px; }
+  .ribbon-left .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--emerald); }
+  .env-tag { background: rgba(16,185,129,0.15); color: #6EE7B7; font-weight: 700; font-size: 10.5px; letter-spacing: 0.06em; padding: 3px 8px; border-radius: 5px; }
+
+  .site-header { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px); background: rgba(255,255,255,0.9); border-bottom: 1px solid var(--line); }
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 32px; gap: 20px; max-width: 1240px; margin: 0 auto; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; color: var(--ink-heading); white-space: nowrap; font-family: 'Plus Jakarta Sans', sans-serif; }
+  .logo-mark { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg, var(--teal), var(--emerald)); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 13px; font-weight: 800; flex-shrink: 0; }
+
+  .nav-right { display: flex; align-items: center; gap: 16px; }
+
+  .notif-wrap { position: relative; }
+  .bell-btn { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--ink-body); background: var(--canvas); border: 1px solid var(--line); position: relative; transition: all 0.25s var(--ease); }
+  .bell-btn:hover { border-color: var(--teal); color: var(--teal-dark); }
+  .bell-badge { position: absolute; top: -3px; right: -3px; width: 16px; height: 16px; border-radius: 50%; background: var(--rose); color: #fff; font-size: 9.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; }
+
+  .notif-panel {
+    position: absolute; top: calc(100% + 10px); right: 0; width: 340px;
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; transform: translateY(-8px);
+    transition: all 0.25s var(--ease); z-index: 100; overflow: hidden;
+  }
+  .notif-panel.show { opacity: 1; visibility: visible; transform: translateY(0); }
+  .notif-panel-head { padding: 16px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
+  .notif-panel-head h4 { font-size: 14.5px; font-weight: 700; }
+  .notif-count-pill { font-size: 11px; font-weight: 700; color: var(--teal-dark); background: var(--teal-light); padding: 2px 9px; border-radius: 999px; }
+  .notif-list { max-height: 320px; overflow-y: auto; }
+  .notif-item { display: flex; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); transition: background 0.2s ease; }
+  .notif-item:last-child { border-bottom: none; }
+  .notif-item:hover { background: var(--canvas); }
+  .notif-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .notif-icon.teal { background: var(--teal-light); color: var(--teal-dark); }
+  .notif-icon.amber { background: var(--amber-soft); color: #B06000; }
+  .notif-icon.emerald { background: var(--emerald-soft); color: #137333; }
+  .notif-body p { font-size: 13px; color: var(--ink-heading); font-weight: 500; line-height: 1.45; margin-bottom: 3px; }
+  .notif-time { font-size: 11.5px; color: var(--ink-muted); }
+  .notif-panel-foot { padding: 12px 18px; text-align: center; }
+  .notif-panel-foot a { font-size: 12.5px; font-weight: 600; color: var(--teal-dark); }
+
+  .auth-badge { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--ink-heading); background: var(--canvas); border: 1px solid var(--line); padding: 7px 13px; border-radius: 999px; white-space: nowrap; }
+  .auth-badge .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--emerald); }
+  .auth-badge .role-tag { color: var(--teal-dark); font-weight: 700; }
+
+  .console-header { padding: 36px 0 26px; border-bottom: 1px solid var(--line); background: #fff; }
+  .console-header h1 { font-size: 30px; margin-bottom: 8px; }
+  .console-header p { color: var(--ink-muted); font-size: 15px; max-width: 640px; }
+
+  .section { padding: 36px 0 60px; }
+  .section-title { font-size: 20px; margin-bottom: 6px; }
+  .section-sub { color: var(--ink-muted); font-size: 14px; margin-bottom: 26px; }
+
+  .module-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .module-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); padding: 24px; display: flex; flex-direction: column; gap: 14px; transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease); }
+  .module-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .module-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .module-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--teal-light); color: var(--teal-dark); flex-shrink: 0; }
+  .access-badge { font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+  .access-badge.full { background: var(--emerald-soft); color: #137333; }
+  .access-badge.read { background: var(--amber-soft); color: #B06000; }
+  .access-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .module-card h3 { font-size: 16.5px; margin-bottom: 2px; }
+  .module-card .module-desc { font-size: 13px; color: var(--ink-muted); line-height: 1.55; }
+  .module-link { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; color: var(--teal-dark); margin-top: auto; }
+  .module-link .arrow { transition: transform 0.3s var(--ease); }
+  .module-card:hover .module-link .arrow { transform: translateX(4px); }
+
+  footer { background: #0F172A; color: #94A3B8; padding: 40px 0; margin-top: 20px; }
+  .footer-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+  .footer-inner .logo { color: #fff; }
+  .footer-meta { font-size: 12.5px; color: #64748B; }
+
+  @media (max-width: 980px) { .module-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 700px) { .module-grid { grid-template-columns: 1fr; } .notif-panel { width: 300px; right: -60px; } }
+</style>
+</head>
+<body>
+
+  <div class="top-ribbon">
+    <div class="container">
+      <div class="ribbon-left"><span class="dot"></span><span>KMRL Internal Systems — Authorized Personnel Only</span></div>
+      <span class="env-tag">PRODUCTION</span>
+    </div>
+  </div>
+
+  <div class="site-header">
+    <nav>
+      <a href="dashboard.html" class="logo"><span class="logo-mark">MM</span>MetroMind KMRL</a>
+      <div class="nav-right">
+        <div class="notif-wrap">
+          <button class="bell-btn" id="bellBtn" aria-label="Notifications">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="bell-badge">3</span>
+          </button>
+          <div class="notif-panel" id="notifPanel">
+            <div class="notif-panel-head">
+              <h4>Notifications</h4>
+              <span class="notif-count-pill">3 new</span>
+            </div>
+            <div class="notif-list">
+              <div class="notif-item">
+                <div class="notif-icon emerald"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+                <div class="notif-body">
+                  <p>Safety checklist approved for KMT-108 — cleared for mainline deployment.</p>
+                  <span class="notif-time">5 minutes ago</span>
+                </div>
+              </div>
+              <div class="notif-item">
+                <div class="notif-icon amber"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg></div>
+                <div class="notif-body">
+                  <p>Hardware node isolated on Track 03 sensor array.</p>
+                  <span class="notif-time">22 minutes ago</span>
+                </div>
+              </div>
+              <div class="notif-item">
+                <div class="notif-icon teal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
+                <div class="notif-body">
+                  <p>Job card JC-2291 logged for KMT-102 overhaul.</p>
+                  <span class="notif-time">1 hour ago</span>
+                </div>
+              </div>
+            </div>
+            <div class="notif-panel-foot"><a href="#">View all notifications</a></div>
+          </div>
+        </div>
+        <div class="auth-badge"><span class="status-dot"></span><span>Suresh <span class="role-tag">· Maintenance Supervisor</span></span></div>
+      </div>
+    </nav>
+  </div>
+
+  <header class="console-header">
+    <div class="container">
+      <h1>Welcome back, Suresh</h1>
+      <p>Here's what's happening across the fleet — your induction, alert, and maintenance modules, all in one place.</p>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-title">Your Modules</div>
+      <div class="section-sub">Quick access to the tools you use for day-to-day maintenance operations.</div>
+
+      <div class="module-grid">
+
+        <div class="module-card">
+          <div class="module-top">
+            <div class="module-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="15" height="12" rx="2"/><circle cx="7" cy="19" r="1.5"/><circle cx="14" cy="19" r="1.5"/><path d="M17 10h3l2 3v6h-5"/></svg>
+            </div>
+            <span class="access-badge full"><span class="dot"></span>Full Control</span>
+          </div>
+          <h3>Fleet &amp; Induction</h3>
+          <p class="module-desc">Approve the pre-departure safety checklist and authorize mainline induction for staged trains.</p>
+        </div>
+
+        <div class="module-card">
+          <div class="module-top">
+            <div class="module-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg>
+            </div>
+            <span class="access-badge read"><span class="dot"></span>Read Only</span>
+          </div>
+          <h3>Reports</h3>
+          <p class="module-desc">Review asset wear metrics and component lifecycle data across the fleet.</p>
+        </div>
+
+        <div class="module-card">
+          <div class="module-top">
+            <div class="module-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+            </div>
+            <span class="access-badge full"><span class="dot"></span>Full Control</span>
+          </div>
+          <h3>Alerts</h3>
+          <p class="module-desc">Isolate faulty hardware nodes and close out maintenance-related alert tickets.</p>
+        </div>
+
+        <div class="module-card">
+          <div class="module-top">
+            <div class="module-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            </div>
+            <span class="access-badge full"><span class="dot"></span>Full Control</span>
+          </div>
+          <h3>Maintenance</h3>
+          <p class="module-desc">Log repairs, schedule overhauls, and update job card status for the fleet.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container footer-inner">
+      <a href="dashboard.html" class="logo"><span class="logo-mark">MM</span>MetroMind KMRL</a>
+      <span class="footer-meta">© 2026 KMRL Internal Systems · v2.4.1</span>
+    </div>
+  </footer>
+
+<script>
+  const bellBtn = document.getElementById('bellBtn');
+  const notifPanel = document.getElementById('notifPanel');
+  bellBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    notifPanel.classList.toggle('show');
+  });
+  document.addEventListener('click', () => notifPanel.classList.remove('show'));
+  notifPanel.addEventListener('click', (e) => e.stopPropagation());
+</script>
+
+</body>
+</html
