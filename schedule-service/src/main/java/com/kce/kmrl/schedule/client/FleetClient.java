@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
-@FeignClient(name = "fleet-service", url = "${fleet.service.url:http://localhost:8085}")
+@FeignClient(name = "fleet-service", url = "${fleet.service.url:http://fleet-service:8085}")
 public interface FleetClient {
 
     @GetMapping("/api/v1/fleet/standby")

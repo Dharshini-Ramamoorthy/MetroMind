@@ -28,7 +28,7 @@ public class ForecastClient {
     private final String internalServiceSecret;
 
     public ForecastClient(
-            @Value("${forecast.service.url:http://localhost:8001}") String forecastServiceUrl,
+            @Value("${forecast.service.url:http://forecast-service:8002}") String forecastServiceUrl,
             @Value("${internal.service-secret:}") String internalServiceSecret) {
         this.baseUrl = forecastServiceUrl;
         this.internalServiceSecret = internalServiceSecret;

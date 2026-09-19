@@ -84,7 +84,9 @@ services:
       SERVER_PORT: 8080
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://${EUREKA_USER:-eureka}:${EUREKA_PASSWORD:-eureka123}@eureka-server:8761/eureka/
       EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+      FORECAST_SERVICE_URL: http://forecast-service:8002
     depends_on:
+
       eureka-server:
         condition: service_healthy
     networks:
@@ -253,9 +255,9 @@ services:
     container_name: kmrl-forecast-service
     restart: unless-stopped
     ports:
-      - "8001:8001"
+      - "8002:8002"
     environment:
-      MONGODB_URI: mongodb://mongodb:27017/kmrl_forecast_db
+      MONGO_URI: mongodb://mongodb:27017/kmrl_forecast_db
     depends_on:
       mongodb:
         condition: service_healthy
@@ -267,7 +269,7 @@ services:
   # ============================================================================
   metromind-ui:
     build:
-      context: D:/ui
+      context: ./frontend
       dockerfile: Dockerfile
     container_name: kmrl-ui
     restart: unless-stopped

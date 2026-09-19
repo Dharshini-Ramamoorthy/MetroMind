@@ -35,7 +35,7 @@ public class ScheduleServiceClient {
 
     public ScheduleServiceClient(
             RestTemplate restTemplate,
-            @Value("${schedule.service.url:http://localhost:8086}") String scheduleServiceUrl) {
+            @Value("${schedule.service.url:http://schedule-service:8086}") String scheduleServiceUrl) {
         this.restTemplate = restTemplate;
         this.scheduleServiceUrl = scheduleServiceUrl;
     }

@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 
 import java.util.List;
 
-@FeignClient(name = "maintenance-service", url = "${maintenance.service.url:http://localhost:8084}")
+@FeignClient(name = "maintenance-service", url = "${maintenance.service.url:http://maintenance-service:8084}")
 public interface MaintenanceClient {
 
     @GetMapping("/api/v1/maintenance/tickets")

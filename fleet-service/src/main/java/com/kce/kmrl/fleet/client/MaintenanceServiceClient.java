@@ -31,7 +31,7 @@ public class MaintenanceServiceClient {
 
     public MaintenanceServiceClient(
             RestTemplate restTemplate,
-            @Value("${maintenance.service.url:http://localhost:8084}") String maintenanceServiceUrl) {
+            @Value("${maintenance.service.url:http://maintenance-service:8084}") String maintenanceServiceUrl) {
         this.restTemplate = restTemplate;
         this.maintenanceServiceUrl = maintenanceServiceUrl;
     }

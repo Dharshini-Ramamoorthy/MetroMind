@@ -56,7 +56,7 @@ public class UserServiceImpl implements UserService {
     @Autowired
     private RestTemplate restTemplate;
 
-    @Value("${approver.service.url:http://localhost:8088}")
+    @Value("${approver.service.url:http://approver-service:8088}")
     private String approverServiceUrl;
 
     @Value("${app.frontend-url:http://localhost:5173}")
@@ -383,4 +383,4 @@ public class UserServiceImpl implements UserService {
                 u.getId(), u.getUsername(), u.getEmail(),
                 u.getRole().name(), u.isActive());
     }
-}
+}

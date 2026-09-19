@@ -39,7 +39,7 @@ public class FleetService {
                          AuditLedgerRepository ledgerRepository,
                          MaintenanceServiceClient maintenanceServiceClient,
                          RestTemplate restTemplate,
-                         @Value("${approver.service.url:http://localhost:8088}") String approverServiceUrl) {
+                         @Value("${approver.service.url:http://approver-service:8088}") String approverServiceUrl) {
         this.trainRepository = trainRepository;
         this.ledgerRepository = ledgerRepository;
         this.maintenanceServiceClient = maintenanceServiceClient;
@@ -225,7 +225,7 @@ public class FleetService {
             throw new IllegalArgumentException("Train " + trainId + " not found");
         }
 
-        String baseUrl = approverServiceUrl != null ? approverServiceUrl.trim() : "http://localhost:8088";
+        String baseUrl = approverServiceUrl != null ? approverServiceUrl.trim() : "http://approver-service:8088";
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
