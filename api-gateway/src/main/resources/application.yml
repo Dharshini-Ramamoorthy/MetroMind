@@ -87,7 +87,7 @@ spring:
                 fallbackUri: forward:/fallback/approver-service
 
         - id: forecast-service
-          uri: ${FORECAST_SERVICE_URL:http://forecast-service:8002}
+          uri: ${FORECAST_SERVICE_URL:http://localhost:8002}
           predicates:
             - Path=/api/v1/forecast/**
 

@@ -84,6 +84,9 @@ public class FleetService {
                 .sorted(LEAST_MILEAGE_FIRST)
                 .collect(Collectors.toList());
 
+        log.info("[FLEET] getYardTrackGroups(): total repository trains = {}, maintenance blocked = {}, IN_SERVICE = {}, STANDBY = {}, returning {} active, {} standby, {} maintenance",
+                all.size(), maintenanceIds.size(), active.size(), standby.size(), active.size(), standby.size(), maintenance.size());
+
         return Arrays.asList(
             new TrackGroupDto("Mainline Operational Corridor (Active Sets)", active),
             new TrackGroupDto("Muttom Yard Staging Bays (Standby Reserve Sets)", standby),
@@ -97,10 +100,15 @@ public class FleetService {
                 .map(TrainAsset::getId)
                 .collect(Collectors.toSet());
 
-        return all.stream()
+        List<TrainAsset> standby = all.stream()
                 .filter(t -> !maintenanceIds.contains(t.getId()) && t.getStatus() != TrainStatus.IN_SERVICE && t.getStatus() != TrainStatus.IN_MAINTENANCE)
                 .sorted(LEAST_MILEAGE_FIRST)
                 .collect(Collectors.toList());
+
+        log.info("[FLEET] getStandbyTrains(): total repository trains = {}, maintenance blocked = {}, returning {} standby trains",
+                all.size(), maintenanceIds.size(), standby.size());
+
+        return standby;
     }
 
     public TrainAsset getTrainById(String id) {

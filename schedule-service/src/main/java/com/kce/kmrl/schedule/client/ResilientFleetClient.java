@@ -66,6 +66,7 @@ public class ResilientFleetClient {
     @Retry(name = "fleetService")
     @CircuitBreaker(name = "fleetService", fallbackMethod = "fallbackGetAvailableTrains")
     public List<TrainAssetDto> getAvailableTrains() {
+        log.info("[FLEET] Requesting available trains from fleet-service (/api/v1/fleet/yard)");
         try {
             List<TrackGroupDto> groups = fleetClient.getYardTracks();
             if (groups != null && !groups.isEmpty()) {
@@ -75,12 +76,13 @@ public class ResilientFleetClient {
                         .filter(t -> t != null && t.getStatus() != null)
                         .filter(t -> !"IN_MAINTENANCE".equalsIgnoreCase(t.getStatus()))
                         .collect(Collectors.toList());
+                log.info("[FLEET] Yard request succeeded. Received {} track group(s), total non-maintenance trains = {}", groups.size(), trains.size());
                 if (!trains.isEmpty()) {
                     return trains;
                 }
             }
         } catch (Exception e) {
-            log.warn("getYardTracks failed ({}), falling back to standby trains list.", e.getMessage());
+            log.warn("[FLEET] getYardTracks failed ({}: {}), attempting fallback to standby trains list.", e.getClass().getSimpleName(), e.getMessage());
         }
         return getStandbyTrains();
     }
@@ -116,21 +118,20 @@ public class ResilientFleetClient {
     }
 
     private List<TrainAssetDto> fallbackGetStandbyTrains(Throwable ex) {
-        log.warn("fleet-service unreachable while fetching standby trains ({}): {}. " +
-                "Treating standby list as empty for this cycle.",
-                ex.getClass().getSimpleName(), ex.getMessage());
+        log.warn("[FLEET] fleet-service request to /api/v1/fleet/standby failed: {} ({}). Fallback activated: returning empty list.",
+                ex.getMessage(), ex.getClass().getSimpleName());
         return Collections.emptyList();
     }
 
     private TrainAssetDto fallbackGetTrainById(String trainId, Throwable ex) {
-        log.warn("fleet-service unreachable while fetching train {} ({}): {}.",
-                trainId, ex.getClass().getSimpleName(), ex.getMessage());
+        log.warn("[FLEET] fleet-service request to /api/v1/fleet/{} failed: {} ({}). Fallback activated: returning null.",
+                trainId, ex.getMessage(), ex.getClass().getSimpleName());
         return null;
     }
 
     private List<TrainAssetDto> fallbackGetAvailableTrains(Throwable ex) {
-        log.warn("fleet-service unreachable while fetching the yard for schedule generation ({}): {}. Falling back to standby trains list.",
-                ex.getClass().getSimpleName(), ex.getMessage());
+        log.warn("[FLEET] fleet-service request to /api/v1/fleet/yard failed: {} ({}). Fallback activated: attempting standby trains.",
+                ex.getMessage(), ex.getClass().getSimpleName());
         return getStandbyTrains();
     }
 

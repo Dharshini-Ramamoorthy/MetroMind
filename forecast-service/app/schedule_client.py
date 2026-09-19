@@ -40,7 +40,7 @@ from app.timetable_generator import TripProposal
 
 log = logging.getLogger("forecast-service.schedule_client")
 
-SCHEDULE_SERVICE_URL = os.environ.get("SCHEDULE_SERVICE_URL", "http://schedule-service:8086")
+SCHEDULE_SERVICE_URL = os.environ.get("SCHEDULE_SERVICE_URL", "http://localhost:8086")
 PROPOSE_PATH = "/api/v1/schedule/propose"
 
 SYSTEM_USER_ID = "forecast-service"

@@ -150,6 +150,18 @@ public class ScheduleService {
                     return !isBlocked;
                 })
                 .collect(Collectors.toList());
+
+        long inServiceCount = (rawFleet != null ? rawFleet : Collections.<TrainAssetDto>emptyList()).stream()
+                .filter(tr -> tr != null && "IN_SERVICE".equalsIgnoreCase(tr.getStatus()))
+                .count();
+        long standbyCount = (rawFleet != null ? rawFleet : Collections.<TrainAssetDto>emptyList()).stream()
+                .filter(tr -> tr != null && "STANDBY".equalsIgnoreCase(tr.getStatus()))
+                .count();
+        long excludedCount = (rawFleet != null ? rawFleet : Collections.<TrainAssetDto>emptyList()).size() - (candidatePool != null ? candidatePool.size() : 0);
+
+        log.info("[SCHEDULE] fleet-service returned {} trains for serviceDate={}", rawFleet != null ? rawFleet.size() : 0, serviceDate);
+        log.info("[SCHEDULE] Total fleet = {}, Maintenance excluded = {}, IN_SERVICE = {}, STANDBY = {}, Candidate pool = {}",
+                rawFleet != null ? rawFleet.size() : 0, excludedCount, inServiceCount, standbyCount, candidatePool != null ? candidatePool.size() : 0);
         log.info("FLEET TIME = {} ms ({} candidate trains)", System.currentTimeMillis() - t, candidatePool != null ? candidatePool.size() : 0);
 
         if (candidatePool == null || candidatePool.isEmpty()) {
