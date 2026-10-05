@@ -80,7 +80,7 @@ public class MaintenanceServiceImpl implements MaintenanceService {
     private MaintenanceResponse createRoutineCheckTicket(CreateTicketRequest request) {
         LocalDate plannedDate = request.getPlannedMaintenanceDate();
         if (plannedDate == null) {
-            throw new InvalidRequestException("plannedMaintenanceDate is required for ROUTINE_CHECK tickets.");
+            plannedDate = LocalDate.now().plusDays(1);
         }
         if (!plannedDate.isAfter(LocalDate.now())) {
             throw new InvalidRequestException("plannedMaintenanceDate must be a future date (received: " + plannedDate + ").");

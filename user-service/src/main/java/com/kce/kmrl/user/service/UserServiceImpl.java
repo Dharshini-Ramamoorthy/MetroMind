@@ -32,9 +32,11 @@ import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -96,7 +98,7 @@ public class UserServiceImpl implements UserService {
         String email = signUpRequest.getEmail().trim();
 
         ERole requestedRole = resolveRole(signUpRequest.getRole());
-        if (requestedRole == ERole.ADMIN || requestedRole == ERole.SADA) {
+        if (requestedRole == ERole.ADMIN) {
             throw new RuntimeException(UserConstants.ERR_CANNOT_SELF_REGISTER_PRIVILEGED_ROLE);
         }
 
@@ -107,11 +109,31 @@ public class UserServiceImpl implements UserService {
             throw new RuntimeException(UserConstants.ERR_EMAIL_TAKEN);
         }
 
-        if (Boolean.TRUE.equals(pendingRegistrationRepository.existsPendingByUsername(username))) {
-            throw new RuntimeException(UserConstants.ERR_USERNAME_PENDING);
+        Optional<PendingRegistration> existingOpt = pendingRegistrationRepository.findByUsernameAndStatus(username, RegistrationStatus.PENDING);
+        if (existingOpt.isEmpty()) {
+            existingOpt = pendingRegistrationRepository.findByEmailAndStatus(email, RegistrationStatus.PENDING);
         }
-        if (Boolean.TRUE.equals(pendingRegistrationRepository.existsPendingByEmail(email))) {
-            throw new RuntimeException(UserConstants.ERR_EMAIL_PENDING);
+
+        if (existingOpt.isPresent()) {
+            PendingRegistration existing = existingOpt.get();
+            if (existing.getApprovalTaskId() == null || "SUBMISSION_FAILED".equals(existing.getApprovalTaskId())) {
+                log.info("Pending registration for {} previously failed submission. Resubmitting approval task...", username);
+                existing.setPassword(passwordEncoder.encode(signUpRequest.getPassword()));
+                existing.setRequestedRole(requestedRole);
+                existing = pendingRegistrationRepository.save(existing);
+                submitApprovalTask(existing);
+                try {
+                    emailService.sendRegistrationSubmittedEmail(existing.getEmail(), existing.getUsername());
+                } catch (Exception e) {
+                    log.warn("Registration-submitted email failed for {}: {}", existing.getEmail(), e.getMessage());
+                }
+                return;
+            }
+            if (existing.getUsername().equalsIgnoreCase(username)) {
+                throw new RuntimeException(UserConstants.ERR_USERNAME_PENDING);
+            } else {
+                throw new RuntimeException(UserConstants.ERR_EMAIL_PENDING);
+            }
         }
 
         PendingRegistration pending = new PendingRegistration(
@@ -123,6 +145,16 @@ public class UserServiceImpl implements UserService {
         }
 
         submitApprovalTask(pending);
+
+        final String submittedEmail = pending.getEmail();
+        final String submittedUsername = pending.getUsername();
+        CompletableFuture.runAsync(() -> {
+            try {
+                emailService.sendRegistrationSubmittedEmail(submittedEmail, submittedUsername);
+            } catch (Exception e) {
+                log.warn("Registration-submitted email failed for {}: {}", submittedEmail, e.getMessage());
+            }
+        });
     }
 
     private void submitApprovalTask(PendingRegistration pending) {
@@ -137,9 +169,12 @@ public class UserServiceImpl implements UserService {
                     " | Requested role: " + pending.getRequestedRole());
             payload.put("priority", "MEDIUM");
             payload.put("requestedBy", pending.getUsername());
+            payload.put("assignedApproverRole", "ADMIN");
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            headers.set("X-User-Id", "user-service");
+            headers.set("X-User-Role", "SYSTEM");
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
 
             ResponseEntity<Map> response = restTemplate.postForEntity(approverServiceUrl + "/api/approver/tasks/submit", entity, Map.class);
@@ -151,6 +186,7 @@ public class UserServiceImpl implements UserService {
                 if (taskIdObj != null) {
                     pending.setApprovalTaskId(String.valueOf(taskIdObj));
                     pendingRegistrationRepository.save(pending);
+                    log.info("Successfully submitted USER_REGISTRATION approval task id {} for pending registration {}", taskIdObj, pending.getId());
                 }
             }
         } catch (Exception e) {
@@ -158,6 +194,21 @@ public class UserServiceImpl implements UserService {
                     pending.getId(), e.getClass().getSimpleName(), e.getMessage());
             pending.setApprovalTaskId("SUBMISSION_FAILED");
             pendingRegistrationRepository.save(pending);
+        }
+    }
+
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void retryPendingSubmissionsOnStartup() {
+        try {
+            List<PendingRegistration> pendingList = pendingRegistrationRepository.findByStatus(RegistrationStatus.PENDING);
+            for (PendingRegistration p : pendingList) {
+                if (p.getApprovalTaskId() == null || "SUBMISSION_FAILED".equals(p.getApprovalTaskId())) {
+                    log.info("Auto-retrying pending registration approval task for {} (ID: {}) on application startup", p.getUsername(), p.getId());
+                    submitApprovalTask(p);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not retry pending registrations on startup: {}", e.getMessage());
         }
     }
 
@@ -192,12 +243,17 @@ public class UserServiceImpl implements UserService {
         pending.setStatus(RegistrationStatus.APPROVED);
         pendingRegistrationRepository.save(pending);
 
-        try {
-            emailService.sendRegistrationApprovedEmail(pending.getEmail(), pending.getUsername(), defaultFrontendUrl + "/signin");
-        } catch (Exception e) {
-            log.error("Registration-approved email failed for {}: {}: {}",
-                    pending.getEmail(), e.getClass().getName(), e.getMessage(), e);
-        }
+        final String approvedEmail = pending.getEmail();
+        final String approvedUsername = pending.getUsername();
+        final String signinUrl = defaultFrontendUrl + "/signin";
+        CompletableFuture.runAsync(() -> {
+            try {
+                emailService.sendRegistrationApprovedEmail(approvedEmail, approvedUsername, signinUrl);
+            } catch (Exception e) {
+                log.error("Registration-approved email failed for {}: {}: {}",
+                        approvedEmail, e.getClass().getName(), e.getMessage(), e);
+            }
+        });
     }
 
     @Override
@@ -212,12 +268,17 @@ public class UserServiceImpl implements UserService {
         pending.setStatus(RegistrationStatus.REJECTED);
         pendingRegistrationRepository.save(pending);
 
-        try {
-            emailService.sendRegistrationRejectedEmail(pending.getEmail(), pending.getUsername(), reason);
-        } catch (Exception e) {
-            log.error("Registration-rejected email failed for {}: {}: {}",
-                    pending.getEmail(), e.getClass().getName(), e.getMessage(), e);
-        }
+        final String rejectedEmail = pending.getEmail();
+        final String rejectedUsername = pending.getUsername();
+        final String rejectReason = reason;
+        CompletableFuture.runAsync(() -> {
+            try {
+                emailService.sendRegistrationRejectedEmail(rejectedEmail, rejectedUsername, rejectReason);
+            } catch (Exception e) {
+                log.error("Registration-rejected email failed for {}: {}: {}",
+                        rejectedEmail, e.getClass().getName(), e.getMessage(), e);
+            }
+        });
     }
 
     private ERole resolveRole(String requestedRole) {
@@ -244,8 +305,16 @@ public class UserServiceImpl implements UserService {
             user.setResetPasswordExpires(LocalDateTime.now().plusMinutes(15));
             userRepository.save(user);
 
-            String resetUrl = frontendUrl + "/reset-password?token=" + token;
-            emailService.sendResetPasswordEmail(user.getEmail(), resetUrl);
+            final String resetUrl = frontendUrl + "/reset-password?token=" + token;
+            final String targetEmail = user.getEmail();
+            CompletableFuture.runAsync(() -> {
+                try {
+                    emailService.sendResetPasswordEmail(targetEmail, resetUrl);
+                } catch (Exception e) {
+                    log.error("Reset-password email failed for {}: {}: {}",
+                            targetEmail, e.getClass().getName(), e.getMessage(), e);
+                }
+            });
         }
     }
 

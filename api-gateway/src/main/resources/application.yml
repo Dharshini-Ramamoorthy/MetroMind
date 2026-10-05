@@ -108,83 +108,83 @@ resilience4j:
     instances:
       userServiceCB:
         register-health-indicator: true
-        sliding-window-size: 10
-        minimum-number-of-calls: 5
-        permitted-number-of-calls-in-half-open-state: 3
-        wait-duration-in-open-state: 10s
-        failure-rate-threshold: 50
-        slow-call-rate-threshold: 80
-        slow-call-duration-threshold: 3s
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        permitted-number-of-calls-in-half-open-state: 5
+        wait-duration-in-open-state: 5s
+        failure-rate-threshold: 80
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 15s
       fleetServiceCB:
         register-health-indicator: true
-        sliding-window-size: 10
-        minimum-number-of-calls: 5
-        permitted-number-of-calls-in-half-open-state: 3
-        wait-duration-in-open-state: 10s
-        failure-rate-threshold: 50
-        slow-call-rate-threshold: 80
-        slow-call-duration-threshold: 3s
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        permitted-number-of-calls-in-half-open-state: 5
+        wait-duration-in-open-state: 5s
+        failure-rate-threshold: 80
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 15s
       scheduleServiceCB:
         register-health-indicator: true
-        sliding-window-size: 10
-        minimum-number-of-calls: 5
-        permitted-number-of-calls-in-half-open-state: 3
-        wait-duration-in-open-state: 10s
-        failure-rate-threshold: 50
-        slow-call-rate-threshold: 80
-        slow-call-duration-threshold: 3s
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        permitted-number-of-calls-in-half-open-state: 5
+        wait-duration-in-open-state: 5s
+        failure-rate-threshold: 80
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 15s
       maintenanceServiceCB:
         register-health-indicator: true
-        sliding-window-size: 10
-        minimum-number-of-calls: 5
-        permitted-number-of-calls-in-half-open-state: 3
-        wait-duration-in-open-state: 10s
-        failure-rate-threshold: 50
-        slow-call-rate-threshold: 80
-        slow-call-duration-threshold: 3s
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        permitted-number-of-calls-in-half-open-state: 5
+        wait-duration-in-open-state: 5s
+        failure-rate-threshold: 80
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 15s
       alertServiceCB:
         register-health-indicator: true
-        sliding-window-size: 10
-        minimum-number-of-calls: 5
-        permitted-number-of-calls-in-half-open-state: 3
-        wait-duration-in-open-state: 10s
-        failure-rate-threshold: 50
-        slow-call-rate-threshold: 80
-        slow-call-duration-threshold: 3s
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        permitted-number-of-calls-in-half-open-state: 5
+        wait-duration-in-open-state: 5s
+        failure-rate-threshold: 80
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 15s
       reportServiceCB:
         register-health-indicator: true
-        sliding-window-size: 10
-        minimum-number-of-calls: 5
-        permitted-number-of-calls-in-half-open-state: 3
-        wait-duration-in-open-state: 10s
-        failure-rate-threshold: 50
-        slow-call-rate-threshold: 80
-        slow-call-duration-threshold: 3s
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        permitted-number-of-calls-in-half-open-state: 5
+        wait-duration-in-open-state: 5s
+        failure-rate-threshold: 80
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 15s
       approverServiceCB:
         register-health-indicator: true
-        sliding-window-size: 10
-        minimum-number-of-calls: 5
-        permitted-number-of-calls-in-half-open-state: 3
-        wait-duration-in-open-state: 10s
-        failure-rate-threshold: 50
-        slow-call-rate-threshold: 80
-        slow-call-duration-threshold: 3s
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        permitted-number-of-calls-in-half-open-state: 5
+        wait-duration-in-open-state: 5s
+        failure-rate-threshold: 80
+        slow-call-rate-threshold: 100
+        slow-call-duration-threshold: 15s
   timelimiter:
     instances:
       userServiceCB:
-        timeout-duration: 4s
+        timeout-duration: 15s
       fleetServiceCB:
-        timeout-duration: 4s
+        timeout-duration: 15s
       scheduleServiceCB:
-        timeout-duration: 4s
+        timeout-duration: 15s
       maintenanceServiceCB:
-        timeout-duration: 4s
+        timeout-duration: 15s
       alertServiceCB:
-        timeout-duration: 4s
+        timeout-duration: 15s
       reportServiceCB:
-        timeout-duration: 4s
+        timeout-duration: 15s
       approverServiceCB:
-        timeout-duration: 4s
+        timeout-duration: 15s
 
 gateway.internal-secret: ${GATEWAY_INTERNAL_SECRET}
 

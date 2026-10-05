@@ -66,11 +66,14 @@ export default function MaintenancePage({ user, userName = user?.username || "Ma
     // Modal State for New Job Card
     const [showModal, setShowModal] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split("T")[0];
     const [formData, setFormData] = useState({
         trainId: "",
         type: "Routine Check",
+        repairType: "ROUTINE_CHECK",
         priority: "Medium",
         description: "",
+        plannedMaintenanceDate: tomorrowStr,
     });
     // ── Fetch DB Records ────────────────────────────────────────────────────────
     const fetchRecords = async () => {
@@ -152,18 +155,17 @@ export default function MaintenancePage({ user, userName = user?.username || "Ma
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
         };
+        if (formData.repairType === "ROUTINE_CHECK" && !formData.plannedMaintenanceDate) {
+            alert("Planned maintenance date is required for Routine Check.");
+            setSubmitting(false);
+            return;
+        }
         const payload = {
-            // Trimmed - a stray leading/trailing space here would silently fail
-            // to match the exact id fleet-service expects (e.g. "TS-04 " !==
-            // "TS-04"), producing the same kind of untracked-ticket problem a
-            // wrong identifier does, just harder to spot by eye.
             trainNumber: formData.trainId.trim(),
             description: formData.type + (formData.description ? ` - ${formData.description}` : ""),
+            repairType: formData.repairType,
+            ...(formData.repairType === "ROUTINE_CHECK" && formData.plannedMaintenanceDate ? { plannedMaintenanceDate: formData.plannedMaintenanceDate } : {}),
             priority: formData.priority.toUpperCase(),
-            // No status field - CreateTicketRequest on the backend has no such
-            // field at all (a ticket always starts IN_PROGRESS server-side, see
-            // MaintenanceServiceImpl.createTicket). Sending one used to be dead
-            // weight Jackson silently ignored.
             createdBy: userName,
             createdAt: new Date().toISOString(),
         };
@@ -175,7 +177,7 @@ export default function MaintenancePage({ user, userName = user?.username || "Ma
             });
             if (response.ok) {
                 setShowModal(false);
-                setFormData({ trainId: "", type: "Routine Check", priority: "Medium", description: "" });
+                setFormData({ trainId: "", type: "Routine Check", repairType: "ROUTINE_CHECK", priority: "Medium", description: "", plannedMaintenanceDate: tomorrowStr });
                 fetchRecords(); // Refresh list from DB
             }
             else if (response.status === 403) {
@@ -589,20 +591,57 @@ export default function MaintenancePage({ user, userName = user?.username || "Ma
 
               <div>
                 <label style={{ fontFamily: SANS, fontSize: 12, fontWeight: 700, color: inkB, display: "block", marginBottom: 5 }}>
-                  Maintenance Type
+                  Repair Type *
                 </label>
-                <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })} style={{
-                width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${bd}`,
-                fontFamily: SANS, fontSize: 13, color: inkH, outline: "none", background: "#fff"
-            }}>
-                  <option>Routine Check</option>
-                  <option>Brake Inspection</option>
-                  <option>Wheel Overhaul</option>
-                  <option>Electrical Fault</option>
-                  <option>HVAC Repair</option>
-                  <option>Bogie Servicing</option>
+                <select
+                  value={formData.repairType}
+                  onChange={(e) => {
+                    const enumVal = e.target.value;
+                    const labelMap = {
+                      ROUTINE_CHECK: "Routine Check",
+                      CORRECTIVE: "Corrective Repair",
+                      PREVENTIVE: "Preventive Maintenance",
+                      COMPONENT_REPLACEMENT: "Component Replacement",
+                      OVERHAUL: "Overhaul",
+                      EMERGENCY: "Emergency",
+                    };
+                    setFormData({ ...formData, repairType: enumVal, type: labelMap[enumVal] || enumVal });
+                  }}
+                  style={{
+                    width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${bd}`,
+                    fontFamily: SANS, fontSize: 13, color: inkH, outline: "none", background: "#fff"
+                  }}>
+                  <option value="ROUTINE_CHECK">Routine Check</option>
+                  <option value="CORRECTIVE">Corrective Repair</option>
+                  <option value="PREVENTIVE">Preventive Maintenance</option>
+                  <option value="COMPONENT_REPLACEMENT">Component Replacement</option>
+                  <option value="OVERHAUL">Overhaul</option>
+                  <option value="EMERGENCY">Emergency</option>
                 </select>
               </div>
+
+              {formData.repairType === "ROUTINE_CHECK" && (
+                <div>
+                  <label style={{ fontFamily: SANS, fontSize: 12, fontWeight: 700, color: inkB, display: "block", marginBottom: 5 }}>
+                    Planned Maintenance Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    min={tomorrowStr}
+                    value={formData.plannedMaintenanceDate}
+                    onChange={(e) => setFormData({ ...formData, plannedMaintenanceDate: e.target.value })}
+                    style={{
+                      width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${bd}`,
+                      fontFamily: SANS, fontSize: 13, color: inkH, outline: "none", background: "#fff",
+                      boxSizing: "border-box"
+                    }}
+                  />
+                  <p style={{ fontFamily: SANS, fontSize: 11, color: inkM, marginTop: 4 }}>
+                    Routine checks must be scheduled in advance for a future date.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label style={{ fontFamily: SANS, fontSize: 12, fontWeight: 700, color: inkB, display: "block", marginBottom: 5 }}>

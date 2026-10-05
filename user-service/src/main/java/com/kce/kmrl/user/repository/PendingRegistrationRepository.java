@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -21,4 +22,10 @@ public interface PendingRegistrationRepository extends JpaRepository<PendingRegi
     Boolean existsPendingByEmail(@Param("email") String email);
 
     Optional<PendingRegistration> findByIdAndStatus(Long id, RegistrationStatus status);
+
+    Optional<PendingRegistration> findByUsernameAndStatus(String username, RegistrationStatus status);
+
+    Optional<PendingRegistration> findByEmailAndStatus(String email, RegistrationStatus status);
+
+    List<PendingRegistration> findByStatus(RegistrationStatus status);
 }

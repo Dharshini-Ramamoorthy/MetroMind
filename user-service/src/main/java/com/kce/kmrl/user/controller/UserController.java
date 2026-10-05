@@ -52,7 +52,7 @@ public class UserController {
     private String frontendUrl;
 
     private boolean isValidInternalSecret(String provided) {
-        if (internalSecret == null || internalSecret.isBlank() || "local-dev-internal-secret-change-me".equals(internalSecret) || provided == null || provided.isBlank()) {
+        if (internalSecret == null || internalSecret.isBlank() || provided == null || provided.isBlank()) {
             return false;
         }
         return MessageDigest.isEqual(

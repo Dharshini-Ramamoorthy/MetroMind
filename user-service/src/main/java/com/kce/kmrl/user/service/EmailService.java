@@ -52,6 +52,34 @@ public class EmailService {
     }
 
     @Retry(name = "emailService")
+    @CircuitBreaker(name = "emailService", fallbackMethod = "sendRegistrationSubmittedEmailFallback")
+    public void sendRegistrationSubmittedEmail(String toEmail, String username) throws MessagingException {
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+        helper.setTo(toEmail);
+        helper.setSubject("Registration Received - MetroMind KMRL");
+
+        String htmlContent = """
+            <div style="font-family: Arial, sans-serif; padding: 24px; color: #0F172A; max-width: 500px; border: 1px solid #E2E8F0; border-radius: 12px;">
+                <h2 style="color: #009688; margin-bottom: 8px;">MetroMind KMRL</h2>
+                <p style="font-size: 15px; color: #334155;">Hi %s,</p>
+                <p style="font-size: 14px; color: #64748B;">Thank you for registering. Your registration request has been submitted and is currently <strong>pending administrator approval</strong>.</p>
+                <p style="font-size: 14px; color: #64748B;">You will receive another email once an administrator reviews and approves your account.</p>
+                <p style="font-size: 12px; color: #94A3B8;">If you did not request this account, please contact your KMRL administrator.</p>
+            </div>
+            """.formatted(username);
+
+        helper.setText(htmlContent, true);
+        mailSender.send(message);
+    }
+
+    private void sendRegistrationSubmittedEmailFallback(String toEmail, String username, Throwable t) {
+        log.error("Registration-submitted email to {} could not be sent (mail service unavailable/circuit open): {}: {}",
+                toEmail, t.getClass().getName(), t.getMessage(), t);
+    }
+
+    @Retry(name = "emailService")
     @CircuitBreaker(name = "emailService", fallbackMethod = "sendRegistrationApprovedEmailFallback")
     public void sendRegistrationApprovedEmail(String toEmail, String username, String loginUrl) throws MessagingException {
         MimeMessage message = mailSender.createMimeMessage();
