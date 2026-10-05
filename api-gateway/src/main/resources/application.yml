@@ -9,9 +9,11 @@ spring:
       globalcors:
         cors-configurations:
           '[/**]':
-            allowedOrigins:
-              - "http://localhost:5173"
-              - "http://localhost:3000"
+            allowedOriginPatterns:
+              - "http://localhost:*"
+              - "https://*.vercel.app"
+              - "https://*.netlify.app"
+              - "*"
             allowedMethods: "*"
             allowedHeaders: "*"
             allowCredentials: true
