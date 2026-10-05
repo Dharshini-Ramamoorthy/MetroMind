@@ -4,7 +4,8 @@ import SharedHeader from "./SharedHeader";
 import SharedFooter from "./SharedFooter";
 import { getCached, setCached } from "./dataCache";
 
-export const API_BASE_URL = "http://localhost:8080";
+import { API_BASE } from "./apiConfig";
+export const API_BASE_URL = API_BASE;
 export const USER_MGMT_API_BASE_URL = `${API_BASE_URL}/api/v1/users`;
 export const APPROVER_API_BASE_URL = `${API_BASE_URL}/api/approver`;
 

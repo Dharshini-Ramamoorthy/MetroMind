@@ -4,7 +4,8 @@ import SharedHeader from "./SharedHeader";
 import SharedFooter from "./SharedFooter";
 import { getCached, setCached } from "./dataCache";
 
-const API_BASE_URL = "http://localhost:8080/api/v1/users";
+import { API_BASE } from "./apiConfig";
+const API_BASE_URL = `${API_BASE}/api/v1/users`;
 
 const teal = "#009688";
 const tealDk = "#00786B";

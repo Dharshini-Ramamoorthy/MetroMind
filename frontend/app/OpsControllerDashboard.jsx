@@ -21,13 +21,9 @@ const DISPLAY     = "'Plus Jakarta Sans', sans-serif";
 const SANS        = "Inter, sans-serif";
 const MONO        = "'JetBrains Mono', monospace";
 
-const FLEET_API_BASE =
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_FLEET_API_BASE) ||
-  "http://localhost:8080/api/v1";
-
-const SCHEDULE_API_BASE =
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_SCHEDULE_API_BASE) ||
-  "http://localhost:8080/api/v1";
+import { API_BASE } from "./apiConfig";
+const FLEET_API_BASE = `${API_BASE}/api/v1`;
+const SCHEDULE_API_BASE = `${API_BASE}/api/v1`;
 
 class ApiError extends Error {
   constructor(message, service) {
@@ -109,7 +105,7 @@ export default function OpsControllerDashboard({
     const [fleetResult, scheduleResult, historyResult] = await Promise.allSettled([
       apiFetch(FLEET_API_BASE, "fleet", "/fleet/summary"),
       apiFetch(SCHEDULE_API_BASE, "schedule", "/schedule/trips/window"),
-      fetch("http://localhost:8080/api/approver/history", { headers }).then((res) => res.ok ? res.json() : []),
+      fetch(`${API_BASE}/api/approver/history`, { headers }).then((res) => res.ok ? res.json() : []),
     ]);
 
     if (fleetResult.status === "fulfilled") {

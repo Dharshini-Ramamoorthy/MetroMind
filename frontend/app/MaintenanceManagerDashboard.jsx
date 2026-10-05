@@ -4,8 +4,9 @@ import SharedHeader from "./SharedHeader";
 import SharedFooter from "./SharedFooter";
 import { getCached, setCached } from "./dataCache";
 
-export const MAINTENANCE_API_BASE_URL = "http://localhost:8080/api/v1/maintenance";
-export const FLEET_API_BASE_URL = "http://localhost:8080/api/v1/fleet";
+import { API_BASE } from "./apiConfig";
+export const MAINTENANCE_API_BASE_URL = `${API_BASE}/api/v1/maintenance`;
+export const FLEET_API_BASE_URL = `${API_BASE}/api/v1/fleet`;
 
 const teal = "#009688";
 const tealDk = "#00786B";
@@ -102,7 +103,7 @@ export default function MaintenanceManagerDashboard({ isSignedIn, onNavigate, on
                 if (!res.ok) throw new Error(`Maintenance API ${res.status}`);
                 return res.json();
             }),
-            fetch("http://localhost:8080/api/approver/history", { headers }).then((res) => res.ok ? res.json() : []),
+            fetch(`${API_BASE}/api/approver/history`, { headers }).then((res) => res.ok ? res.json() : []),
         ]);
 
         // Fleet: null means timeout — keep previous values to avoid flicker

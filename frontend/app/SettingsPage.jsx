@@ -15,9 +15,9 @@ const line = "rgba(15,23,42,0.08)";
 const DISPLAY = "'Plus Jakarta Sans', sans-serif";
 const SANS = "Inter, sans-serif";
 const MONO = "'JetBrains Mono', monospace";
-// ─── API Base (user-service on :8081) ─────────────────────────────────────────
-const USER_API = (typeof import.meta !== "undefined" && import.meta.env?.VITE_AUTH_API_BASE) ||
-    "http://localhost:8080/api/v1/auth";
+// ─── API Base ─────────────────────────────────────────
+import { API_BASE } from "./apiConfig";
+const USER_API = `${API_BASE}/api/v1/auth`;
 // ─── Role label mapping (ERole enum → display label) ──────────────────────────
 const ROLE_LABELS = {
     ROLE_ADMIN: "System Admin",

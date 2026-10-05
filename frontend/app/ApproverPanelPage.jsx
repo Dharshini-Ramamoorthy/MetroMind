@@ -5,7 +5,7 @@ import SharedFooter from "./SharedFooter";
 import { getCached, setCached } from "./dataCache";
 
 // ─── API & Token System ───────────────────────────────────────────────────────
-const API_BASE = "http://localhost:8080";
+import { API_BASE } from "./apiConfig";
 
 function authHeaders() {
     const token = localStorage.getItem("auth_token");
@@ -714,7 +714,7 @@ export default function ApproverPanelPage({ isSignedIn, userRole, userName, onNa
                 const targetStatus = decision === "APPROVED" ? "COMPLETED" : "IN_PROGRESS";
                 try {
                     const token = getAuthToken();
-                    await fetch(`http://localhost:8080/api/v1/maintenance/tickets/${task.targetEntityId}/status`, {
+                    await fetch(`${API_BASE}/api/v1/maintenance/tickets/${task.targetEntityId}/status`, {
                         method: "PATCH",
                         headers: {
                             "Content-Type": "application/json",

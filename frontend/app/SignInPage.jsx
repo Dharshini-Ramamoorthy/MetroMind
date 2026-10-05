@@ -8,8 +8,8 @@ const inkB = "#334155";
 const inkM = "#64748B";
 const bd = "rgba(15,23,42,0.08)";
 const DISPLAY = "'Plus Jakarta Sans', sans-serif";
-const SANS = "Inter, sans-serif";
-export default function SignInPage({ onNavigate, onLoginSuccess, apiBaseUrl = "http://localhost:8080/api/v1/auth", }) {
+import { AUTH_API_BASE } from "./apiConfig";
+export default function SignInPage({ onNavigate, onLoginSuccess, apiBaseUrl = AUTH_API_BASE, }) {
     const [identifier, setIdentifier] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);

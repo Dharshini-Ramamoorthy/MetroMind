@@ -3,7 +3,8 @@ import { X, Check, CheckCircle, Loader2, RefreshCw, Bell } from "lucide-react";
 // ─── API base ─────────────────────────────────────────────────────────────────
 // Routed through api-gateway (8080) so alert-service gets the
 // X-User-Id/X-User-Role headers the gateway's JWT filter adds.
-export const ALERT_API_BASE_URL = "http://localhost:8080/api/v1/alerts";
+import { API_BASE } from "./apiConfig";
+export const ALERT_API_BASE_URL = `${API_BASE}/api/v1/alerts`;
 function authHeaders() {
     const token = localStorage.getItem("auth_token");
     return {

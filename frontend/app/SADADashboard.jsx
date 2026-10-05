@@ -4,8 +4,9 @@ import SharedHeader from "./SharedHeader";
 import SharedFooter from "./SharedFooter";
 import { getCached, setCached } from "./dataCache";
 
-export const MAINTENANCE_API_BASE_URL = "http://localhost:8080/api/v1/maintenance";
-export const APPROVER_API_BASE_URL = "http://localhost:8080/api/approver";
+import { API_BASE } from "./apiConfig";
+export const MAINTENANCE_API_BASE_URL = `${API_BASE}/api/v1/maintenance`;
+export const APPROVER_API_BASE_URL = `${API_BASE}/api/approver`;
 
 const teal = "#009688";
 const tealDk = "#00786B";
@@ -55,8 +56,8 @@ export default function SADADashboard({ isSignedIn, onNavigate, onLogOut, userNa
         const [ticketsResult, approverResult, fleetResult, scheduleResult] = await Promise.allSettled([
             fetch(`${MAINTENANCE_API_BASE_URL}/tickets`, { headers }).then((res) => res.ok ? res.json() : []),
             fetch(`${APPROVER_API_BASE_URL}/tasks/pending`, { headers }).then((res) => res.ok ? res.json() : []),
-            fetch("http://localhost:8080/api/v1/fleet/yard", { headers }).then((res) => res.ok ? res.json() : []),
-            fetch("http://localhost:8080/api/v1/schedule/trips/window", { headers }).then((res) => res.ok ? res.json() : []),
+            fetch(`${API_BASE}/api/v1/fleet/yard`, { headers }).then((res) => res.ok ? res.json() : []),
+            fetch(`${API_BASE}/api/v1/schedule/trips/window`, { headers }).then((res) => res.ok ? res.json() : []),
         ]);
 
         if (ticketsResult.status === "fulfilled") {

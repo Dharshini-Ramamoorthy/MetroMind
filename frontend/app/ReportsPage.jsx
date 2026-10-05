@@ -5,7 +5,8 @@ import SharedFooter from "./SharedFooter";
 import { getCached, setCached } from "./dataCache";
 // report-service is reached through api-gateway (port 8080), same as
 // every other service - see MaintenancePage.tsx's MAINTENANCE_API_BASE_URL.
-export const REPORT_API_BASE_URL = "http://localhost:8080/api/v1/reports";
+import { API_BASE } from "./apiConfig";
+export const REPORT_API_BASE_URL = `${API_BASE}/api/v1/reports`;
 // Backend enums (FLEET/SCHEDULE/... , FINAL/PROCESSING/...) -> the Title
 // Case labels this page already renders with.
 const CATEGORY_FROM_API = {

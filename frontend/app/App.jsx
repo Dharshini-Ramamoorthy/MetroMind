@@ -23,7 +23,8 @@ import ApproverPanelPage from "./ApproverPanelPage";
 import SettingsPage from "./SettingsPage";
 import UserManagementPage from "./UserManagementPage";
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+import { API_BASE } from "./apiConfig";
+export const API_BASE_URL = API_BASE;
 export const AUTH_API_BASE_URL = `${API_BASE_URL}/api/v1/auth`;
 export const MAINTENANCE_API_BASE_URL = `${API_BASE_URL}/api/v1/maintenance`;
 

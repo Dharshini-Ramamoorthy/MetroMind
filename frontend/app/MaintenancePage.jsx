@@ -7,11 +7,9 @@ import SharedFooter from "./SharedFooter";
 // authenticated via the X-User-Id / X-User-Role headers that only the
 // gateway's JWT filter adds, so calling :8084 straight from the browser
 // gets a 401 on everything. Same pattern as SchedulePage's API_BASE.
-export const MAINTENANCE_API_BASE_URL = "http://localhost:8080/api/v1/maintenance";
-// MaintenanceResponse.cofDocumentUrl comes back as a relative path
-// (/api/v1/maintenance/tickets/{id}/certificate-of-fitness/document) - this
-// is just the gateway origin to prefix it with.
-const GATEWAY_ORIGIN = "http://localhost:8080";
+import { API_BASE } from "./apiConfig";
+export const MAINTENANCE_API_BASE_URL = `${API_BASE}/api/v1/maintenance`;
+const GATEWAY_ORIGIN = API_BASE;
 // ── Design Tokens ─────────────────────────────────────────────────────────────
 const teal = "#009688";
 const amber = "#F59E0B";

@@ -23,9 +23,8 @@ const MONO    = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas
 // fleet-service requires every request to be authenticated via the
 // X-User-Id / X-User-Role headers that only the gateway's JWT filter adds, so
 // calling :8085 straight from the browser gets a 401 on every request.
-const API_BASE =
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_FLEET_API_BASE) ||
-  "http://localhost:8080/api/v1";
+import { API_BASE as ROOT_API_BASE } from "./apiConfig";
+const API_BASE = `${ROOT_API_BASE}/api/v1`;
 
 class ApiError extends Error {}
 

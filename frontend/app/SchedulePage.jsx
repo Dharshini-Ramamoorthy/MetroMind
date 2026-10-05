@@ -20,7 +20,8 @@ const DISPLAY = "'Plus Jakarta Sans', sans-serif";
 const SANS = "Inter, sans-serif";
 const MONO = "'JetBrains Mono', monospace";
 // ─── API Base ─────────────────────────────────────────────────────────────────
-const API_BASE = "http://localhost:8080/api/v1";
+import { API_BASE as ROOT_API_BASE } from "./apiConfig";
+const API_BASE = `${ROOT_API_BASE}/api/v1`;
 function getAuthToken() {
     return localStorage.getItem("auth_token")
         || localStorage.getItem("token")
@@ -451,7 +452,7 @@ export default function SchedulePage({ isSignedIn, onNavigate, onLogOut, userNam
 
             const [tripsRes, historyRes] = await Promise.allSettled([
                 fetch(`${API_BASE}/schedule/trips/date/${selectedDate}`, { headers }),
-                fetch(`http://localhost:8080/api/approver/history`, { headers }),
+                fetch(`${ROOT_API_BASE}/api/approver/history`, { headers }),
             ]);
 
             let data = [];
@@ -597,7 +598,7 @@ export default function SchedulePage({ isSignedIn, onNavigate, onLogOut, userNam
                 requestedBy: userName || "OperationsController",
                 assignedApproverRole: "ROLE_SADA"
             };
-            const res = await fetch("http://localhost:8080/api/approver/tasks/submit", {
+            const res = await fetch(`${ROOT_API_BASE}/api/approver/tasks/submit`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify(payload)
