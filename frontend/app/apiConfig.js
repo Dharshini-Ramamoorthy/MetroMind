@@ -1,6 +1,6 @@
 export const API_BASE = (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL)
   ? import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "")
-  : "http://localhost:8080";
+  : "https://fc3c2734c6ace950-171-79-56-101.serveousercontent.com";
 
 export const AUTH_API_BASE = `${API_BASE}/api/v1/auth`;
 export const FLEET_API_BASE = `${API_BASE}/api/v1/fleet`;
